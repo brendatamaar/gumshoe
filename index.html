@@ -1,0 +1,1689 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gumshoe: agents you can trust in production</title>
+<meta name="description" content="Gumshoe is the open-source Python runtime that runs LLM agents in production with guardrails and replay. Cap spend, block risky actions, pause for approval, trace every step, and replay runs as regression tests, all from one event log." />
+<meta property="og:title" content="Gumshoe: run your agents like production software" />
+<meta property="og:description" content="Bounded, auditable, replayable. One event log powers spend caps, approvals, tracing, replay and a CI gate for agent trajectories." />
+<meta name="theme-color" content="#FBFAF8" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23191918'/%3E%3Ccircle cx='14' cy='14' r='6.5' fill='none' stroke='%23F2B35B' stroke-width='2.6'/%3E%3Cpath d='M19 19l6 6' stroke='%23F2B35B' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+/* ───────────────────────── Tokens ───────────────────────── */
+:root {
+  --bg: #FBFAF8;
+  --bg-2: #F4F2EE;
+  --surface: #FFFFFF;
+  --fg: #191918;
+  --fg-2: #4F4D49;
+  --fg-3: #8B8881;
+  --line: rgba(25, 25, 24, 0.09);
+  --line-2: rgba(25, 25, 24, 0.15);
+  --btn-bg: #191918;
+  --btn-fg: #FFFFFF;
+  --accent: #D9822B;
+  --accent-soft: rgba(217, 130, 43, 0.12);
+  --hl: #F2B35B;
+  --shadow: 0 1px 2px rgba(25,25,24,.04), 0 8px 24px -8px rgba(25,25,24,.10);
+  --shadow-lg: 0 2px 4px rgba(25,25,24,.04), 0 30px 80px -20px rgba(25,25,24,.25);
+
+  /* Product panels stay dark in both themes (Linear-style screenshots) */
+  --ink: #0D0D0F;
+  --ink-2: #141417;
+  --ink-3: #1B1B1F;
+  --ink-line: rgba(255, 255, 255, 0.07);
+  --ink-line-2: rgba(255, 255, 255, 0.12);
+  --ink-fg: #EDEDEF;
+  --ink-fg-2: #A1A1AA;
+  --ink-fg-3: #6B6B74;
+
+  /* Run states */
+  --s-pending: #8B8F98;
+  --s-running: #5B8CFF;
+  --s-paused: #E8A93A;
+  --s-succeeded: #3DB872;
+  --s-failed: #EB5A5F;
+  --s-halted: #F07A3C;
+
+  /* Mascot */
+  --m-ink: #1D1C1A;
+  --m-skin: #FBE7D3;
+  --m-coat: #D9A86C;
+  --m-hat: #3A3833;
+  --m-paper: #FFFFFF;
+
+  --radius: 14px;
+  --maxw: 1180px;
+  --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --serif: "Instrument Serif", ui-serif, Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B0B0C; --bg-2: #111113; --surface: #151517;
+    --fg: #EEEEF0; --fg-2: #A9A9B2; --fg-3: #6E6E78;
+    --line: rgba(255,255,255,.07); --line-2: rgba(255,255,255,.13);
+    --btn-bg: #EEEEF0; --btn-fg: #0B0B0C;
+    --accent: #F2A65A; --accent-soft: rgba(242,166,90,.12);
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -8px rgba(0,0,0,.5);
+    --shadow-lg: 0 30px 80px -20px rgba(0,0,0,.7);
+    --ink: #0F0F11; --ink-2: #151518; --ink-3: #1C1C20;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B0B0C; --bg-2: #111113; --surface: #151517;
+  --fg: #EEEEF0; --fg-2: #A9A9B2; --fg-3: #6E6E78;
+  --line: rgba(255,255,255,.07); --line-2: rgba(255,255,255,.13);
+  --btn-bg: #EEEEF0; --btn-fg: #0B0B0C;
+  --accent: #F2A65A; --accent-soft: rgba(242,166,90,.12);
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -8px rgba(0,0,0,.5);
+  --shadow-lg: 0 30px 80px -20px rgba(0,0,0,.7);
+  --ink: #0F0F11; --ink-2: #151518; --ink-3: #1C1C20;
+  color-scheme: dark;
+}
+
+/* ───────────────────────── Base ───────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--sans); font-size: 16px; line-height: 1.6;
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  transition: background .3s ease, color .3s ease;
+}
+img, svg { display: block; max-width: 100%; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+code, pre, .mono { font-family: var(--mono); font-feature-settings: normal; }
+::selection { background: var(--hl); color: #191918; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+.serif { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spacing: -0.01em; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 500; color: var(--fg-3); letter-spacing: 0.01em;
+}
+.eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.h2 {
+  font-size: clamp(34px, 5vw, 56px); line-height: 1.04; letter-spacing: -0.035em;
+  font-weight: 600; margin: 14px 0 18px; text-wrap: balance;
+}
+.h2 .serif { font-size: 1.08em; }
+.lede { font-size: clamp(17px, 1.6vw, 19px); color: var(--fg-2); max-width: 620px; margin: 0; text-wrap: pretty; }
+section { position: relative; }
+.section { padding: 128px 0; }
+.section-sm { padding: 88px 0; }
+.rule { border: 0; border-top: 1px solid var(--line); margin: 0; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px;
+  border-radius: 10px; font-weight: 500; font-size: 15px; white-space: nowrap;
+  transition: transform .15s ease, background .2s ease, box-shadow .2s ease, opacity .2s;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--btn-bg); color: var(--btn-fg); box-shadow: var(--shadow); }
+.btn-primary:hover { opacity: .88; }
+.btn-ghost { border: 1px solid var(--line-2); background: var(--surface); }
+.btn-ghost:hover { border-color: var(--fg-3); }
+.btn-sm { height: 34px; padding: 0 14px; font-size: 14px; border-radius: 8px; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px;
+  border-radius: 999px; font-size: 11.5px; font-weight: 600; letter-spacing: .02em;
+  font-family: var(--mono); text-transform: uppercase;
+}
+.st { --c: var(--s-pending); color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); }
+.st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.st-running { --c: var(--s-running); } .st-paused { --c: var(--s-paused); }
+.st-succeeded { --c: var(--s-succeeded); } .st-failed { --c: var(--s-failed); }
+.st-halted { --c: var(--s-halted); } .st-pending { --c: var(--s-pending); }
+
+/* Reveal on scroll */
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1); }
+.reveal.in { opacity: 1; transform: none; }
+.reveal.d1 { transition-delay: .08s; } .reveal.d2 { transition-delay: .16s; } .reveal.d3 { transition-delay: .24s; }
+
+/* ───────────────────────── Nav ───────────────────────── */
+.nav {
+  position: sticky; top: 0; z-index: 50;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: saturate(160%) blur(14px); -webkit-backdrop-filter: saturate(160%) blur(14px);
+  border-bottom: 1px solid transparent; transition: border-color .3s ease;
+}
+.nav.scrolled { border-bottom-color: var(--line); }
+.nav-in { height: 64px; display: flex; align-items: center; gap: 28px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -0.02em; }
+.brand-mark { width: 28px; height: 28px; }
+.nav-links { display: flex; gap: 4px; margin-left: 8px; }
+.nav-links a { font-size: 14px; color: var(--fg-2); padding: 6px 10px; border-radius: 8px; transition: color .2s, background .2s; }
+.nav-links a:hover { color: var(--fg); background: var(--line); }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.icon-btn { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; color: var(--fg-2); transition: background .2s, color .2s; }
+.icon-btn:hover { background: var(--line); color: var(--fg); }
+.icon-btn svg { width: 18px; height: 18px; }
+.gh-stars { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--fg-2); padding: 6px 10px; border-radius: 8px; }
+.gh-stars:hover { background: var(--line); color: var(--fg); }
+.menu-btn { display: none; }
+.mobile-menu { display: none; }
+
+/* ───────────────────────── Hero ───────────────────────── */
+.hero { padding: 72px 0 40px; overflow: hidden; }
+.hero-bg { position: absolute; inset: 0; pointer-events: none; z-index: -1; }
+.hero-bg::before {
+  content: ""; position: absolute; inset: -1px 0 0;
+  background-image:
+    linear-gradient(to right, var(--line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, #000 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, #000 30%, transparent 75%);
+}
+.hero-bg::after {
+  content: ""; position: absolute; left: 50%; top: 280px; width: 1100px; height: 600px; transform: translateX(-50%);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--hl) 28%, transparent), transparent 70%);
+  filter: blur(40px); opacity: .7;
+}
+.hero-top { text-align: center; display: flex; flex-direction: column; align-items: center; }
+.announce {
+  display: inline-flex; align-items: center; gap: 10px; padding: 5px 6px 5px 12px; border-radius: 999px;
+  border: 1px solid var(--line-2); background: var(--surface); font-size: 13.5px; color: var(--fg-2);
+  box-shadow: var(--shadow); transition: border-color .2s;
+}
+.announce:hover { border-color: var(--fg-3); }
+.announce b { color: var(--fg); font-weight: 600; }
+.announce .arrow { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-2); }
+.hero h1 {
+  font-size: clamp(44px, 8vw, 92px); line-height: .98; letter-spacing: -0.045em; font-weight: 650;
+  margin: 28px 0 22px; max-width: 980px; text-wrap: balance;
+}
+.hero h1 .serif { font-size: 1.07em; letter-spacing: -0.02em; position: relative; white-space: nowrap; }
+.squiggle { position: absolute; left: -2%; right: -2%; bottom: -0.08em; width: 104%; height: .22em; color: var(--accent); overflow: visible; }
+.squiggle path { stroke-dasharray: 600; stroke-dashoffset: 600; animation: draw 1.4s .5s cubic-bezier(.6,.1,.2,1) forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.hero .lede { margin: 0 auto; text-align: center; max-width: 640px; }
+.hero-cta { display: flex; gap: 12px; margin-top: 34px; flex-wrap: wrap; justify-content: center; }
+.copy-cmd {
+  display: inline-flex; align-items: center; gap: 12px; height: 44px; padding: 0 8px 0 16px; border-radius: 10px;
+  border: 1px solid var(--line-2); background: var(--surface); font-family: var(--mono); font-size: 14px; color: var(--fg);
+  transition: border-color .2s;
+}
+.copy-cmd:hover { border-color: var(--fg-3); }
+.copy-cmd .prompt { color: var(--fg-3); }
+.copy-cmd .cbtn { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; color: var(--fg-3); }
+.copy-cmd:hover .cbtn { background: var(--bg-2); color: var(--fg); }
+.copy-cmd .cbtn svg { width: 15px; height: 15px; }
+.hero-meta { margin-top: 18px; font-size: 13px; color: var(--fg-3); display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+.hero-meta span { display: inline-flex; align-items: center; gap: 6px; }
+.hero-meta svg { width: 14px; height: 14px; }
+
+/* App window (hero) */
+.stage { margin-top: 64px; perspective: 2000px; }
+.app {
+  position: relative; border-radius: 16px; background: var(--ink); color: var(--ink-fg);
+  border: 1px solid var(--ink-line-2); box-shadow: var(--shadow-lg), 0 0 0 1px rgba(0,0,0,.04);
+  overflow: hidden; transform: rotateX(8deg) scale(.97); transform-origin: 50% 0;
+  transition: transform 1.2s cubic-bezier(.2,.7,.2,1);
+}
+.app.flat { transform: none; }
+.app::after { content: ""; position: absolute; inset: 0; border-radius: 16px; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.04), transparent 30%); }
+.chrome { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--ink-line); background: var(--ink-2); }
+.chrome i { width: 11px; height: 11px; border-radius: 50%; background: #2A2A2F; display: block; }
+.chrome .title { margin: 0 auto; font-size: 12px; color: var(--ink-fg-3); font-family: var(--mono); transform: translateX(-24px); }
+.app-body { display: grid; grid-template-columns: 290px 1fr; min-height: 560px; }
+.side { border-right: 1px solid var(--ink-line); background: var(--ink-2); padding: 14px 10px; font-size: 13px; }
+.side-h { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 12px; color: var(--ink-fg-2); font-size: 12px; }
+.side-h b { color: var(--ink-fg); font-weight: 600; font-size: 13px; }
+.filters { display: flex; gap: 6px; padding: 0 6px 12px; flex-wrap: wrap; }
+.filters span { font-size: 11px; padding: 3px 8px; border-radius: 6px; background: var(--ink-3); color: var(--ink-fg-2); border: 1px solid var(--ink-line); }
+.filters span.on { color: var(--ink-fg); border-color: var(--ink-line-2); }
+.run-row { display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; color: var(--ink-fg-2); }
+.run-row .sd { width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); }
+.run-row .nm { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.run-row .nm b { color: var(--ink-fg); font-weight: 500; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.run-row .nm small { font-family: var(--mono); font-size: 10.5px; color: var(--ink-fg-3); }
+.run-row .cost { font-family: var(--mono); font-size: 11px; color: var(--ink-fg-3); }
+.run-row.sel { background: var(--ink-3); box-shadow: inset 0 0 0 1px var(--ink-line-2); }
+.run-row.running .sd { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c) 0%, transparent); } }
+
+.main { padding: 22px 26px; min-width: 0; }
+.main-h { display: flex; align-items: center; gap: 14px; }
+.main-h .mascot-sm { width: 48px; height: 48px; flex: none; background: var(--ink-3); border-radius: 12px; border: 1px solid var(--ink-line); padding: 3px; }
+.main-h h3 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.main-h .sub { font-size: 12px; color: var(--ink-fg-3); font-family: var(--mono); }
+.main-h .pill { margin-left: auto; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--ink-line); border: 1px solid var(--ink-line); border-radius: 10px; overflow: hidden; margin: 18px 0; }
+.stats div { background: var(--ink); padding: 12px 14px; }
+.stats small { display: block; font-size: 11px; color: var(--ink-fg-3); margin-bottom: 2px; }
+.stats b { font-size: 15px; font-weight: 600; font-family: var(--mono); letter-spacing: -0.02em; }
+.stats b em { font-style: normal; color: var(--ink-fg-3); font-weight: 400; }
+.chart { border: 1px solid var(--ink-line); border-radius: 10px; padding: 12px 14px 6px; background: linear-gradient(180deg, var(--ink-2), var(--ink)); }
+.chart-h { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-fg-3); }
+.chart-h b { color: var(--ink-fg-2); font-weight: 500; }
+.chart svg { width: 100%; height: auto; }
+.spend-line { stroke-dasharray: 1200; stroke-dashoffset: 1200; }
+.app.flat .spend-line { animation: draw 2.4s .4s ease-out forwards; }
+.app.flat .spend-line.l2 { animation-delay: 2.1s; animation-duration: 1s; }
+.chart .fade-in { opacity: 0; }
+.app.flat .chart .fade-in { animation: fadein .5s forwards; }
+@keyframes fadein { to { opacity: 1; } }
+
+.events { margin-top: 14px; border: 1px solid var(--ink-line); border-radius: 10px; overflow: hidden; font-family: var(--mono); font-size: 11.5px; }
+.ev { display: grid; grid-template-columns: 38px 150px 1fr auto; gap: 12px; padding: 7px 12px; border-top: 1px solid var(--ink-line); color: var(--ink-fg-2); align-items: center; }
+.ev:first-child { border-top: 0; }
+.ev .sq { color: var(--ink-fg-3); }
+.ev .ty { color: var(--ink-fg); }
+.ev .pl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev .rt { color: var(--ink-fg-3); }
+.ev.warn { background: color-mix(in srgb, var(--s-paused) 8%, transparent); }
+.ev.warn .ty, .ev.warn .v { color: var(--s-paused); }
+.ev.stop { background: color-mix(in srgb, var(--s-halted) 10%, transparent); }
+.ev.stop .ty, .ev.stop .v { color: var(--s-halted); }
+.ev .ok { color: var(--s-succeeded); }
+.ev.gap { color: var(--ink-fg-3); justify-content: center; grid-template-columns: 1fr; text-align: center; padding: 4px; font-size: 10.5px; letter-spacing: .2em; }
+
+/* ───────────────────────── Logos ───────────────────────── */
+.logos { padding: 64px 0 24px; text-align: center; }
+.logos p { font-size: 14px; color: var(--fg-3); margin: 0 0 26px; }
+.marquee { overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
+.marquee-track { display: flex; gap: 56px; width: max-content; animation: marquee 40s linear infinite; }
+.marquee:hover .marquee-track { animation-play-state: paused; }
+@keyframes marquee { to { transform: translateX(-50%); } }
+.wm { display: inline-flex; align-items: center; gap: 9px; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; color: var(--fg-3); white-space: nowrap; transition: color .2s; }
+.wm:hover { color: var(--fg); }
+.wm svg { width: 20px; height: 20px; }
+
+/* ───────────────────────── Problem ───────────────────────── */
+.problem-head { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: end; margin-bottom: 56px; }
+.fails { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+.fail {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 20px 20px;
+  display: flex; flex-direction: column; gap: 10px; transition: transform .25s ease, box-shadow .25s ease, border-color .25s;
+  min-height: 300px;
+}
+.fail:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: var(--line-2); }
+.fail .num { font-family: var(--mono); font-size: 12px; color: var(--fg-3); }
+.fail .ico { width: 44px; height: 44px; margin: 4px 0 6px; color: var(--fg); }
+.fail h4 { margin: 0; font-size: 17px; letter-spacing: -0.015em; font-weight: 600; }
+.fail p { margin: 0; font-size: 14px; color: var(--fg-2); line-height: 1.5; }
+.fail .fix { margin-top: auto; padding-top: 14px; border-top: 1px dashed var(--line-2); font-size: 13px; color: var(--fg); display: flex; gap: 8px; line-height: 1.45; }
+.fail .fix::before { content: "→"; color: var(--accent); font-weight: 600; }
+
+/* ───────────────────────── Principle / architecture ───────────────────────── */
+.dark-band {
+  background: var(--ink); color: var(--ink-fg); border-radius: 28px; margin: 0 16px; overflow: hidden; position: relative;
+}
+.dark-band::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(800px 400px at 15% 0%, rgba(242,179,91,.10), transparent 60%),
+              radial-gradient(700px 500px at 100% 100%, rgba(91,140,255,.10), transparent 60%);
+}
+.dark-band .eyebrow { color: var(--ink-fg-3); }
+.dark-band .lede { color: var(--ink-fg-2); }
+.formula {
+  font-family: var(--mono); font-size: clamp(18px, 2.6vw, 30px); letter-spacing: -0.02em; margin: 40px 0 8px;
+  padding: 26px 30px; border-radius: 16px; border: 1px solid var(--ink-line-2); background: rgba(255,255,255,.02);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0 .5ch; overflow-x: auto;
+}
+.formula .k { color: var(--hl); }
+.formula .f { color: #9DB8FF; }
+.formula .c { color: var(--ink-fg-3); font-size: .55em; margin-left: auto; letter-spacing: 0; font-family: var(--sans); }
+.principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--ink-line); border: 1px solid var(--ink-line); border-radius: 16px; overflow: hidden; margin-top: 28px; }
+.principle { background: var(--ink); padding: 28px; }
+.principle .n { font-family: var(--mono); font-size: 12px; color: var(--hl); }
+.principle h4 { margin: 10px 0 8px; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; }
+.principle p { margin: 0; color: var(--ink-fg-2); font-size: 14.5px; }
+.principle code { font-size: 12.5px; color: var(--ink-fg); background: var(--ink-3); padding: 2px 6px; border-radius: 5px; border: 1px solid var(--ink-line); }
+.arch-wrap { margin-top: 72px; display: grid; grid-template-columns: 1fr 1.5fr; gap: 56px; align-items: center; }
+.arch-wrap h3 { font-size: 28px; letter-spacing: -0.03em; line-height: 1.15; margin: 10px 0 14px; font-weight: 600; }
+.arch-wrap p { color: var(--ink-fg-2); margin: 0 0 14px; }
+.arch-svg text { font-family: var(--sans); }
+.arch-svg .mono { font-family: var(--mono); }
+.flow-dash { stroke-dasharray: 4 6; animation: dash 1.2s linear infinite; }
+@keyframes dash { to { stroke-dashoffset: -20; } }
+.tick { animation: tickin 6s linear infinite; }
+@keyframes tickin { 0% { opacity: .15; } 10% { opacity: 1; } 100% { opacity: .15; } }
+
+/* ───────────────────────── Feature deep dives ───────────────────────── */
+.feature { display: grid; grid-template-columns: 1fr 1.25fr; gap: 64px; align-items: center; padding: 72px 0; }
+.feature.flip { grid-template-columns: 1.25fr 1fr; }
+.feature.flip .f-text { order: 2; }
+.f-text .tag { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--fg-2); padding: 4px 10px; border-radius: 7px; background: var(--surface); border: 1px solid var(--line); }
+.f-text .tag i { width: 7px; height: 7px; border-radius: 2px; background: var(--c, var(--accent)); display: block; }
+.f-text h3 { font-size: clamp(28px, 3.4vw, 40px); line-height: 1.08; letter-spacing: -0.035em; margin: 18px 0 14px; font-weight: 600; text-wrap: balance; }
+.f-text > p { color: var(--fg-2); margin: 0 0 22px; font-size: 16.5px; }
+.checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.checks li { display: grid; grid-template-columns: 20px 1fr; gap: 10px; font-size: 15px; color: var(--fg-2); line-height: 1.5; }
+.checks li b { color: var(--fg); font-weight: 600; }
+.checks svg { width: 18px; height: 18px; margin-top: 2px; color: var(--accent); }
+.panel { background: var(--ink); color: var(--ink-fg); border-radius: 18px; border: 1px solid var(--ink-line-2); box-shadow: var(--shadow-lg); overflow: hidden; position: relative; }
+.panel-h { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--ink-line); font-size: 12.5px; color: var(--ink-fg-2); background: var(--ink-2); }
+.panel-h b { color: var(--ink-fg); font-weight: 500; }
+.panel-h .mono { font-size: 11.5px; color: var(--ink-fg-3); }
+
+/* Concurrency grid */
+.grid100 { display: grid; grid-template-columns: repeat(20, 1fr); gap: 6px; padding: 22px 18px 14px; }
+.cell { aspect-ratio: 1; border-radius: 4px; background: var(--ink-3); border: 1px solid var(--ink-line); transition: background .35s ease, box-shadow .35s ease, border-color .35s; }
+.cell[data-s="running"] { background: color-mix(in srgb, var(--s-running) 75%, var(--ink)); border-color: transparent; box-shadow: 0 0 10px -2px color-mix(in srgb, var(--s-running) 70%, transparent); }
+.cell[data-s="succeeded"] { background: color-mix(in srgb, var(--s-succeeded) 55%, var(--ink)); border-color: transparent; }
+.cell[data-s="halted"] { background: var(--s-halted); border-color: transparent; box-shadow: 0 0 14px 0 color-mix(in srgb, var(--s-halted) 80%, transparent); }
+.cell[data-s="paused"] { background: var(--s-paused); border-color: transparent; }
+.cell[data-s="failed"] { background: var(--s-failed); border-color: transparent; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; padding: 0 18px 16px; font-size: 11.5px; color: var(--ink-fg-3); font-family: var(--mono); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 8px; height: 8px; border-radius: 2px; background: var(--c); display: block; }
+.legend b { color: var(--ink-fg); font-weight: 500; }
+.heal { border-top: 1px solid var(--ink-line); padding: 14px 18px 18px; font-family: var(--mono); font-size: 11.5px; line-height: 1.85; color: var(--ink-fg-2); }
+.heal .r { color: var(--s-failed); } .heal .g { color: var(--s-succeeded); } .heal .m { color: var(--ink-fg-3); } .heal .y { color: var(--hl); }
+.heal-title { font-family: var(--sans); font-size: 11.5px; color: var(--ink-fg-3); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .08em; }
+
+/* Approval card */
+.guard-stack { padding: 22px; display: grid; gap: 14px; }
+.msg { background: var(--ink-2); border: 1px solid var(--ink-line); border-radius: 12px; padding: 16px; display: grid; grid-template-columns: 36px 1fr; gap: 12px; }
+.msg .av { width: 36px; height: 36px; border-radius: 9px; background: #F4EBDD; padding: 2px; }
+.msg .who { font-size: 13px; } .msg .who b { font-weight: 600; } .msg .who span { color: var(--ink-fg-3); font-size: 11.5px; margin-left: 6px; }
+.msg p { margin: 4px 0 10px; font-size: 13.5px; color: var(--ink-fg-2); }
+.msg p code { color: var(--ink-fg); background: var(--ink-3); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.kv { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 16px; border-left: 3px solid var(--s-paused); padding: 8px 12px; background: rgba(255,255,255,.02); border-radius: 0 8px 8px 0; font-size: 12px; }
+.kv small { display: block; color: var(--ink-fg-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+.kv b { font-weight: 500; font-family: var(--mono); font-size: 12px; }
+.actions { display: flex; gap: 8px; margin-top: 12px; }
+.actions span { font-size: 12.5px; padding: 6px 14px; border-radius: 7px; border: 1px solid var(--ink-line-2); font-weight: 500; }
+.actions .ap { background: var(--s-succeeded); border-color: transparent; color: #08210F; }
+.timeline-mini { display: flex; align-items: center; gap: 0; font-family: var(--mono); font-size: 11px; color: var(--ink-fg-3); padding: 2px 4px; }
+.timeline-mini .seg { flex: 1; height: 2px; background: var(--ink-line-2); margin: 0 8px; position: relative; }
+.timeline-mini .seg.wait { background: repeating-linear-gradient(90deg, var(--s-paused) 0 6px, transparent 6px 10px); }
+.kill { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--ink-line); border-radius: 12px; overflow: hidden; border: 1px solid var(--ink-line); }
+.kill div { background: var(--ink-2); padding: 12px 14px; font-size: 11.5px; color: var(--ink-fg-3); }
+.kill b { display: block; color: var(--ink-fg); font-family: var(--mono); font-size: 14px; font-weight: 500; margin-top: 2px; }
+.verdicts { display: flex; gap: 6px; flex-wrap: wrap; }
+.verdicts span { font-family: var(--mono); font-size: 11.5px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--ink-line-2); color: var(--ink-fg-2); }
+.verdicts span i { font-style: normal; color: var(--c); }
+
+/* PR comment */
+.pr { padding: 20px; display: grid; gap: 14px; }
+.pr-top { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-fg-2); }
+.pr-top .av { width: 28px; height: 28px; border-radius: 50%; background: #F4EBDD; padding: 1px; }
+.pr-top b { color: var(--ink-fg); font-weight: 600; }
+.pr-card { border: 1px solid var(--ink-line-2); border-radius: 12px; overflow: hidden; }
+.pr-status { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: color-mix(in srgb, var(--s-failed) 10%, transparent); border-bottom: 1px solid var(--ink-line); font-size: 13.5px; font-weight: 500; }
+.pr-status .x { width: 20px; height: 20px; border-radius: 50%; background: var(--s-failed); display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 700; flex: none; }
+.pr-status small { margin-left: auto; color: var(--ink-fg-3); font-weight: 400; font-family: var(--mono); font-size: 11px; }
+.dag { display: grid; grid-template-columns: 74px 1fr; gap: 10px 12px; padding: 16px 14px; align-items: center; font-size: 11px; }
+.dag .lbl { color: var(--ink-fg-3); font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+.nodes { display: flex; align-items: center; gap: 0; flex-wrap: nowrap; min-width: 0; }
+.node { font-family: var(--mono); font-size: 11px; padding: 5px 9px; border-radius: 6px; border: 1px solid var(--ink-line-2); background: var(--ink-2); white-space: nowrap; }
+.node.miss { border: 1px dashed var(--s-failed); color: var(--s-failed); background: color-mix(in srgb, var(--s-failed) 8%, transparent); text-decoration: line-through; }
+.node.req::after { content: " ★"; color: var(--hl); }
+.edge { width: 18px; height: 1px; background: var(--ink-line-2); flex: none; position: relative; }
+.edge::after { content: ""; position: absolute; right: 0; top: -3px; border: 3.5px solid transparent; border-left-color: var(--ink-fg-3); border-right: 0; }
+.pr-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pr-table th, .pr-table td { text-align: left; padding: 8px 14px; border-top: 1px solid var(--ink-line); }
+.pr-table th { color: var(--ink-fg-3); font-weight: 500; font-size: 11px; }
+.pr-table td { font-family: var(--mono); font-size: 11.5px; color: var(--ink-fg-2); }
+.pr-table .bad { color: var(--s-failed); } .pr-table .good { color: var(--s-succeeded); } .pr-table .meh { color: var(--s-paused); }
+
+/* ───────────────────────── Modules (tabs) ───────────────────────── */
+.mod-head { text-align: center; display: flex; flex-direction: column; align-items: center; margin-bottom: 44px; }
+.mod-head .lede { text-align: center; }
+.tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--bg-2); border: 1px solid var(--line); margin: 0 auto 28px; flex-wrap: wrap; justify-content: center; }
+.tab { font-family: var(--mono); font-size: 13.5px; padding: 8px 16px; border-radius: 9px; color: var(--fg-2); transition: background .2s, color .2s, box-shadow .2s; }
+.tab:hover { color: var(--fg); }
+.tab[aria-selected="true"] { background: var(--surface); color: var(--fg); box-shadow: var(--shadow); }
+.tabwrap { display: flex; justify-content: center; }
+.mod-panel { display: none; grid-template-columns: 0.9fr 1.6fr; gap: 16px; animation: fadeup .45s cubic-bezier(.2,.7,.2,1); }
+.mod-panel.on { display: grid; }
+@keyframes fadeup { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.mod-intro { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 30px; display: flex; flex-direction: column; }
+.mod-intro .mname { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+.mod-intro h3 { font-size: 30px; letter-spacing: -0.03em; margin: 8px 0 10px; line-height: 1.1; font-weight: 600; }
+.mod-intro p { color: var(--fg-2); margin: 0; font-size: 15px; }
+.mod-intro .install { margin-top: auto; padding-top: 24px; font-family: var(--mono); font-size: 12.5px; color: var(--fg-3); }
+.mod-intro .install code { color: var(--fg); background: var(--bg-2); border: 1px solid var(--line); padding: 3px 8px; border-radius: 6px; }
+.mod-feats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.mf { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 22px; transition: border-color .2s, transform .25s; }
+.mf:hover { border-color: var(--line-2); transform: translateY(-2px); }
+.mf-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.mf h4 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.015em; }
+.mf .since { font-family: var(--mono); font-size: 10.5px; color: var(--fg-3); border: 1px solid var(--line); padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.mf p { margin: 8px 0 0; color: var(--fg-2); font-size: 14px; line-height: 1.55; }
+.mf code { font-size: 12px; background: var(--bg-2); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); }
+
+/* ───────────────────────── Code ───────────────────────── */
+.code-grid { display: grid; grid-template-columns: 0.85fr 1.4fr; gap: 56px; align-items: start; }
+.code-steps { list-style: none; padding: 0; margin: 32px 0 0; display: grid; gap: 6px; }
+.code-steps button { width: 100%; text-align: left; padding: 16px 18px; border-radius: 12px; border: 1px solid transparent; transition: background .2s, border-color .2s; display: grid; grid-template-columns: 28px 1fr; gap: 12px; }
+.code-steps button:hover { background: var(--bg-2); }
+.code-steps button[aria-selected="true"] { background: var(--surface); border-color: var(--line); box-shadow: var(--shadow); }
+.code-steps .n { font-family: var(--mono); font-size: 12px; color: var(--fg-3); padding-top: 2px; }
+.code-steps button[aria-selected="true"] .n { color: var(--accent); }
+.code-steps b { display: block; font-weight: 600; font-size: 15.5px; letter-spacing: -0.01em; }
+.code-steps span { display: block; font-size: 14px; color: var(--fg-2); margin-top: 2px; }
+.editor { background: var(--ink); border-radius: 16px; border: 1px solid var(--ink-line-2); box-shadow: var(--shadow-lg); overflow: hidden; color: var(--ink-fg); position: sticky; top: 90px; }
+.editor-tabs { display: flex; background: var(--ink-2); border-bottom: 1px solid var(--ink-line); overflow-x: auto; }
+.editor-tabs span { font-family: var(--mono); font-size: 12px; padding: 11px 16px; color: var(--ink-fg-3); border-right: 1px solid var(--ink-line); white-space: nowrap; }
+.editor-tabs span.on { color: var(--ink-fg); background: var(--ink); box-shadow: inset 0 -1px 0 var(--hl); }
+.editor pre { margin: 0; padding: 20px 0; font-size: 13px; line-height: 1.75; overflow-x: auto; min-height: 470px; counter-reset: ln; }
+.editor pre .ln { display: block; padding: 0 22px 0 0; }
+.editor pre .ln::before { counter-increment: ln; content: counter(ln); display: inline-block; width: 44px; padding-right: 16px; text-align: right; color: #3D3D45; user-select: none; }
+.editor pre .ln.hl { background: rgba(242,179,91,.07); box-shadow: inset 2px 0 0 var(--hl); }
+.tok-k { color: #C792EA; } .tok-s { color: #C3E88D; } .tok-c { color: #5C6370; font-style: italic; }
+.tok-d { color: var(--hl); } .tok-n { color: #F78C6C; } .tok-t { color: #82AAFF; } .tok-f { color: #89DDFF; } .tok-p { color: #FFCB6B; }
+.code-panel { display: none; } .code-panel.on { display: block; }
+
+/* ───────────────────────── Case files (mascot) ───────────────────────── */
+.cases { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 56px; }
+.case { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px 16px 18px; display: flex; flex-direction: column; align-items: center; text-align: center; transition: transform .3s cubic-bezier(.2,.7,.2,1), box-shadow .3s; position: relative; overflow: hidden; }
+.case::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: var(--c); opacity: .9; }
+.case:hover { transform: translateY(-4px) rotate(-.5deg); box-shadow: var(--shadow); }
+.case svg { width: 112px; height: 112px; margin: 6px 0 10px; }
+.case .pill { margin-bottom: 8px; }
+.case p { margin: 0; font-size: 13.5px; color: var(--fg-2); line-height: 1.45; }
+.case:hover svg .prop { animation: wiggle .6s ease; transform-box: fill-box; transform-origin: center; }
+@keyframes wiggle { 25% { transform: rotate(-8deg); } 75% { transform: rotate(6deg); } }
+
+/* Terminal */
+.term-wrap { display: grid; grid-template-columns: 1fr 1.3fr; gap: 56px; align-items: center; margin-top: 110px; }
+.term { background: #0A0A0B; border-radius: 16px; border: 1px solid var(--ink-line-2); box-shadow: var(--shadow-lg); overflow: hidden; color: #D7D7DC; }
+.term .chrome { background: #111113; }
+.term pre { margin: 0; padding: 18px 20px 22px; font-size: 12.5px; line-height: 1.7; min-height: 420px; white-space: pre; overflow-x: auto; }
+.term .t-line { opacity: 0; }
+.term .t-line.show { opacity: 1; }
+.term .p { color: var(--hl); } .term .dim { color: #5A5A63; } .term .g { color: var(--s-succeeded); } .term .b { color: var(--s-running); }
+.term .o { color: var(--s-halted); } .term .y { color: var(--s-paused); } .term .w { color: #fff; font-weight: 500; }
+.caret { display: inline-block; width: 8px; height: 15px; background: var(--hl); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ───────────────────────── Metrics ───────────────────────── */
+.metrics { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.metric { padding: 40px 28px; border-left: 1px solid var(--line); }
+.metric:first-child { border-left: 0; padding-left: 0; }
+.metric b { display: block; font-size: clamp(40px, 5vw, 60px); font-weight: 600; letter-spacing: -0.05em; line-height: 1; }
+.metric b .serif { font-size: .9em; color: var(--accent); }
+.metric > span { display: block; margin-top: 12px; font-size: 14.5px; color: var(--fg-2); max-width: 220px; }
+
+/* ───────────────────────── Roadmap ───────────────────────── */
+.road { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 60px; position: relative; }
+.road::before { content: ""; position: absolute; left: 0; right: 0; top: 13px; height: 2px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 30%, var(--line-2))); border-radius: 2px; }
+.phase { padding-right: 24px; position: relative; display: flex; flex-direction: column; }
+.phase .knot { width: 28px; height: 28px; border-radius: 50%; background: var(--bg); border: 2px solid var(--accent); display: grid; place-items: center; position: relative; z-index: 1; }
+.phase .knot svg { width: 14px; height: 14px; color: var(--accent); }
+.phase .ver { margin-top: 22px; font-family: var(--mono); font-size: 12px; color: var(--fg-3); display: flex; gap: 8px; align-items: center; }
+.phase .ver .shipped { color: var(--s-succeeded); background: color-mix(in srgb, var(--s-succeeded) 12%, transparent); padding: 2px 8px; border-radius: 999px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+.phase h4 { margin: 10px 0 4px; font-size: 22px; letter-spacing: -0.03em; font-weight: 600; }
+.phase h4 .serif { font-size: 1.1em; }
+.phase > p { color: var(--fg-2); font-size: 14.5px; margin: 0 0 16px; }
+.phase ul { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 7px; }
+.phase li { font-size: 14px; color: var(--fg-2); display: grid; grid-template-columns: 16px 1fr; gap: 8px; line-height: 1.45; }
+.phase li::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--fg-3); margin: 8px 0 0 4px; }
+.gate { margin-top: auto; font-size: 12.5px; color: var(--fg-3); border: 1px dashed var(--line-2); border-radius: 10px; padding: 10px 12px; line-height: 1.5; }
+.gate b { color: var(--fg-2); font-weight: 600; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; display: block; margin-bottom: 2px; }
+
+/* ───────────────────────── Compare ───────────────────────── */
+.compare { margin-top: 48px; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--surface); }
+.compare-scroll { overflow-x: auto; }
+.compare table { width: 100%; border-collapse: collapse; min-width: 760px; }
+.compare th, .compare td { padding: 15px 18px; text-align: center; border-bottom: 1px solid var(--line); font-size: 14px; }
+.compare tr:last-child td { border-bottom: 0; }
+.compare th { font-weight: 500; color: var(--fg-3); font-size: 12.5px; background: var(--bg-2); }
+.compare td:first-child, .compare th:first-child { text-align: left; color: var(--fg); font-weight: 500; }
+.compare .us { background: var(--accent-soft); }
+.compare th.us { color: var(--fg); font-weight: 600; }
+.yes { color: var(--s-succeeded); font-weight: 700; }
+.no { color: var(--fg-3); opacity: .55; }
+.part { color: var(--s-paused); font-size: 12.5px; }
+
+/* ───────────────────────── Pricing ───────────────────────── */
+.prices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 56px; }
+.price { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 30px; display: flex; flex-direction: column; position: relative; }
+.price.feat { background: var(--ink); color: var(--ink-fg); border-color: var(--ink-line-2); box-shadow: var(--shadow-lg); }
+.price.feat .muted, .price.feat li { color: var(--ink-fg-2); }
+.price.feat .btn-primary { background: var(--hl); color: #191918; }
+.price.feat .badge { position: absolute; top: 18px; right: 18px; font-size: 11px; font-weight: 600; color: #191918; background: var(--hl); padding: 3px 9px; border-radius: 999px; }
+.price h4 { margin: 0; font-size: 15px; font-weight: 600; }
+.price .muted { color: var(--fg-2); font-size: 14px; margin: 6px 0 22px; min-height: 44px; }
+.price .amt { font-size: 46px; font-weight: 600; letter-spacing: -0.05em; line-height: 1; }
+.price .amt small { font-size: 14px; letter-spacing: 0; font-weight: 400; color: var(--fg-3); margin-left: 4px; }
+.price.feat .amt small { color: var(--ink-fg-3); }
+.price .btn { margin: 24px 0; justify-content: center; }
+.price ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.price li { font-size: 14px; color: var(--fg-2); display: grid; grid-template-columns: 18px 1fr; gap: 10px; line-height: 1.45; }
+.price li svg { width: 16px; height: 16px; margin-top: 2px; color: var(--accent); }
+.price.feat li svg { color: var(--hl); }
+.price-note { text-align: center; margin-top: 24px; font-size: 14px; color: var(--fg-3); }
+.price-note b { color: var(--fg-2); font-weight: 500; }
+
+/* ───────────────────────── FAQ ───────────────────────── */
+.faq-grid { display: grid; grid-template-columns: 0.8fr 1.4fr; gap: 64px; }
+.faq details { border-bottom: 1px solid var(--line); }
+.faq summary { list-style: none; cursor: pointer; padding: 22px 0; font-size: 17px; font-weight: 500; letter-spacing: -0.015em; display: flex; justify-content: space-between; gap: 20px; align-items: center; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary .pm { width: 22px; height: 22px; flex: none; position: relative; border-radius: 50%; border: 1px solid var(--line-2); }
+.faq summary .pm::before, .faq summary .pm::after { content: ""; position: absolute; left: 50%; top: 50%; width: 9px; height: 1.5px; background: var(--fg-2); transform: translate(-50%, -50%); transition: transform .25s; }
+.faq summary .pm::after { transform: translate(-50%, -50%) rotate(90deg); }
+.faq details[open] summary .pm::after { transform: translate(-50%, -50%) rotate(0); }
+.faq details p { margin: 0 0 22px; color: var(--fg-2); font-size: 15.5px; max-width: 640px; }
+.faq details code { font-size: 13px; background: var(--bg-2); padding: 1px 6px; border-radius: 5px; border: 1px solid var(--line); }
+
+/* ───────────────────────── CTA + Footer ───────────────────────── */
+.cta { text-align: center; padding: 140px 0 120px; overflow: hidden; }
+.cta-mascot { width: 150px; height: 150px; margin: 0 auto 10px; }
+.cta h2 { font-size: clamp(40px, 7vw, 84px); letter-spacing: -0.05em; line-height: 1; margin: 10px 0 20px; font-weight: 650; text-wrap: balance; }
+.cta .lede { margin: 0 auto; text-align: center; }
+.cta .hero-cta { margin-top: 36px; }
+footer { border-top: 1px solid var(--line); padding: 64px 0 40px; font-size: 14px; }
+.foot { display: grid; grid-template-columns: 1.6fr repeat(4, 1fr); gap: 32px; }
+.foot h5 { margin: 0 0 14px; font-size: 13px; font-weight: 600; }
+.foot ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.foot a { color: var(--fg-2); transition: color .2s; } .foot a:hover { color: var(--fg); }
+.foot .tagline { color: var(--fg-2); margin: 14px 0 0; max-width: 280px; }
+.foot-bottom { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--fg-3); font-size: 13px; flex-wrap: wrap; }
+.status-ok { display: inline-flex; align-items: center; gap: 8px; }
+.status-ok i { width: 8px; height: 8px; border-radius: 50%; background: var(--s-succeeded); box-shadow: 0 0 0 3px color-mix(in srgb, var(--s-succeeded) 20%, transparent); }
+
+/* Mascot parts */
+.mk-ink { fill: var(--m-ink); } .mk-stroke { stroke: var(--m-ink); }
+.mk-skin { fill: var(--m-skin); } .mk-coat { fill: var(--m-coat); } .mk-hat { fill: var(--m-hat); } .mk-paper { fill: var(--m-paper); }
+.mk-band { fill: var(--hl); }
+
+/* Toast */
+.toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px); background: var(--btn-bg); color: var(--btn-fg); padding: 10px 16px; border-radius: 10px; font-size: 14px; opacity: 0; pointer-events: none; transition: all .3s ease; z-index: 100; box-shadow: var(--shadow-lg); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ───────────────────────── Responsive ───────────────────────── */
+@media (max-width: 1080px) {
+  .fails { grid-template-columns: repeat(3, 1fr); }
+  .cases { grid-template-columns: repeat(3, 1fr); }
+  .road { grid-template-columns: repeat(2, 1fr); row-gap: 48px; }
+  .road::before { display: none; }
+  .foot { grid-template-columns: repeat(3, 1fr); }
+  .foot > div:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 900px) {
+  .nav-links, .gh-stars, .nav-right .btn-ghost { display: none; }
+  .menu-btn { display: grid; }
+  .mobile-menu.open { display: grid; gap: 2px; padding: 10px 24px 18px; border-top: 1px solid var(--line); }
+  .mobile-menu a { padding: 10px 0; color: var(--fg-2); font-size: 15px; border-bottom: 1px solid var(--line); }
+  .app-body { grid-template-columns: 1fr; }
+  .side { display: none; }
+  .problem-head, .arch-wrap, .feature, .feature.flip, .code-grid, .term-wrap, .faq-grid { grid-template-columns: 1fr; gap: 36px; }
+  .feature.flip .f-text { order: 0; }
+  .principles { grid-template-columns: 1fr; }
+  .mod-panel.on { grid-template-columns: 1fr; }
+  .metrics { grid-template-columns: repeat(2, 1fr); }
+  .metric { padding: 32px 20px; }
+  .metric:nth-child(3) { border-left: 0; padding-left: 0; }
+  .metric:nth-child(n+3) { border-top: 1px solid var(--line); }
+  .prices { grid-template-columns: 1fr; }
+  .editor { position: relative; top: 0; }
+  .section { padding: 96px 0; }
+}
+@media (max-width: 640px) {
+  .wrap { padding: 0 16px; }
+  .hero { padding-top: 48px; }
+  .stage { margin-top: 44px; }
+  .app { transform: none; }
+  .fails { grid-template-columns: 1fr; }
+  .fail { min-height: 0; }
+  .cases { grid-template-columns: repeat(2, 1fr); }
+  .mod-feats { grid-template-columns: 1fr; }
+  .road { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .ev { grid-template-columns: 30px 1fr auto; }
+  .ev .pl { display: none; }
+  .main { padding: 16px; }
+  .grid100 { grid-template-columns: repeat(10, 1fr); }
+  .kill { grid-template-columns: 1fr; }
+  .dark-band { margin: 0 8px; border-radius: 20px; }
+  .formula { padding: 18px; }
+  .formula .c { margin-left: 0; width: 100%; }
+  .foot { grid-template-columns: repeat(2, 1fr); }
+  .copy-cmd { font-size: 13px; }
+  .dag { grid-template-columns: 1fr; }
+  .nodes { overflow-x: auto; padding-bottom: 4px; }
+  .editor pre { font-size: 12px; min-height: 0; }
+  .term pre { font-size: 11px; min-height: 0; }
+  .metric:first-child, .metric:nth-child(3) { padding-left: 0; }
+  .metric:nth-child(2), .metric:nth-child(4) { padding-right: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  .reveal { opacity: 1; transform: none; }
+  .app { transform: none; }
+  .marquee-track { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ───────── Mascot sprite (the detective) ───────── -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="det" viewBox="0 0 80 80">
+      <!-- coat -->
+      <path class="mk-coat mk-stroke" stroke-width="2" stroke-linejoin="round" d="M20 79c0-15 8-24 20-24s20 9 20 24z"/>
+      <path class="mk-stroke" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M33 56l7 10 7-10M40 66v13"/>
+      <circle class="mk-ink" cx="43.5" cy="71" r="1.1"/><circle class="mk-ink" cx="43.5" cy="76" r="1.1"/>
+      <!-- head -->
+      <circle class="mk-skin mk-stroke" stroke-width="2" cx="40" cy="41" r="13"/>
+      <circle class="mk-ink" cx="35" cy="42.5" r="1.7"/><circle class="mk-ink" cx="45" cy="42.5" r="1.7"/>
+      <path class="mk-stroke" fill="none" stroke-width="1.8" stroke-linecap="round" d="M37 48.5q3 2 6 0"/>
+      <ellipse cx="31" cy="47" rx="2.2" ry="1.3" fill="#F2A38A" opacity=".55"/><ellipse cx="49" cy="47" rx="2.2" ry="1.3" fill="#F2A38A" opacity=".55"/>
+      <!-- hat -->
+      <path class="mk-hat mk-stroke" stroke-width="2" stroke-linejoin="round" d="M28 34c-.5-10 5-15 12-15s12.5 5 12 15z"/>
+      <path class="mk-hat" d="M36 19.6c2-1.4 6-1.4 8 0l-1 3h-6z" opacity=".6"/>
+      <rect class="mk-band" x="28.2" y="29.5" width="23.6" height="3.4"/>
+      <ellipse class="mk-hat mk-stroke" stroke-width="2" cx="40" cy="34" rx="19" ry="3.6"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- ───────── Nav ───────── -->
+<header class="nav" id="nav">
+  <div class="wrap nav-in">
+    <a href="#top" class="brand" aria-label="Gumshoe home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--btn-bg)"/><circle cx="14" cy="14" r="6.5" fill="none" stroke="#F2B35B" stroke-width="2.6"/><path d="M19 19l6 6" stroke="#F2B35B" stroke-width="3" stroke-linecap="round"/></svg>
+      Gumshoe
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#product">Product</a>
+      <a href="#modules">Modules</a>
+      <a href="#developers">Developers</a>
+      <a href="#roadmap">Changelog</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-right">
+      <a class="gh-stars" href="https://github.com/brendatamaar/gumshoe" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+      <button class="icon-btn" id="themeBtn" aria-label="Toggle color theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+      </button>
+      <a href="#pricing" class="btn btn-ghost btn-sm">Log in</a>
+      <a href="#developers" class="btn btn-primary btn-sm">Get started</a>
+      <button class="icon-btn menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 8h16M4 16h16"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="#product">Product</a><a href="#modules">Modules</a><a href="#developers">Developers</a>
+    <a href="#roadmap">Changelog</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a>
+    <a href="https://github.com/brendatamaar/gumshoe" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ───────── Hero ───────── -->
+<section class="hero">
+  <div class="hero-bg" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="hero-top">
+      <a href="#roadmap" class="announce reveal">
+        <span class="pill st st-succeeded" style="height:20px">New</span>
+        <span><b>Gumshoe 1.0</b> · memory, shadow runs and typed swarms</span>
+        <span class="arrow" aria-hidden="true">→</span>
+      </a>
+      <h1 class="reveal d1">Run your agents like <span class="serif">production software.<svg class="squiggle" viewBox="0 0 300 20" preserveAspectRatio="none" aria-hidden="true"><path d="M3 14 C 60 4, 110 4, 160 11 S 260 16, 297 6" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg></span></h1>
+      <p class="lede reveal d2">Gumshoe is the open-source Python runtime that makes every LLM agent run bounded, auditable and replayable. One event log caps spend, blocks risky actions, waits for human sign-off, traces every step, and turns yesterday's runs into today's regression tests.</p>
+      <div class="hero-cta reveal d3">
+        <button class="copy-cmd" data-copy="pip install gumshoe-ai" aria-label="Copy install command">
+          <span class="prompt">$</span> pip install gumshoe-ai
+          <span class="cbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg></span>
+        </button>
+        <a href="#developers" class="btn btn-primary">Start building <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="hero-meta reveal d3">
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Apache 2.0</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Python 3.13</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Self-host on Postgres</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>OpenTelemetry native</span>
+      </div>
+    </div>
+
+    <!-- App mockup -->
+    <div class="stage">
+      <div class="app" id="app" role="img" aria-label="The Gumshoe run viewer showing a runaway research agent downgraded at its soft limit and halted at its hard spend cap.">
+        <div class="chrome"><i></i><i></i><i></i><span class="title">gumshoe · runs</span></div>
+        <div class="app-body">
+          <aside class="side">
+            <div class="side-h"><b>Runs</b><span class="mono">100 today</span></div>
+            <div class="filters"><span class="on">All 100</span><span>Running 12</span><span>Paused 1</span><span>Halted 1</span></div>
+            <div class="run-row running" style="--c:var(--s-running)"><i class="sd"></i><span class="nm"><b>refund-agent</b><small>run_8f2c · step 4</small></span><span class="cost">$0.04</span></div>
+            <div class="run-row" style="--c:var(--s-succeeded)"><i class="sd"></i><span class="nm"><b>support-triage</b><small>run_31aa · closed</small></span><span class="cost">$0.02</span></div>
+            <div class="run-row sel" style="--c:var(--s-halted)"><i class="sd"></i><span class="nm"><b>research-agent</b><small>run_d07e · halted</small></span><span class="cost">$0.49</span></div>
+            <div class="run-row" style="--c:var(--s-paused)"><i class="sd"></i><span class="nm"><b>billing-agent</b><small>run_77b1 · awaiting approval</small></span><span class="cost">$0.06</span></div>
+            <div class="run-row running" style="--c:var(--s-running)"><i class="sd"></i><span class="nm"><b>sql-analyst</b><small>run_b4e9 · step 7</small></span><span class="cost">$0.09</span></div>
+            <div class="run-row" style="--c:var(--s-succeeded)"><i class="sd"></i><span class="nm"><b>onboarding-agent</b><small>run_12fd · closed</small></span><span class="cost">$0.03</span></div>
+            <div class="run-row" style="--c:var(--s-failed)"><i class="sd"></i><span class="nm"><b>crm-sync</b><small>run_e5c0 · retries_exhausted</small></span><span class="cost">$0.05</span></div>
+            <div class="run-row running" style="--c:var(--s-running)"><i class="sd"></i><span class="nm"><b>refund-agent</b><small>run_90ab · step 2</small></span><span class="cost">$0.01</span></div>
+            <div class="run-row" style="--c:var(--s-pending)"><i class="sd"></i><span class="nm"><b>docs-writer</b><small>run_c3d1 · queued</small></span><span class="cost">$0.00</span></div>
+            <div class="run-row" style="--c:var(--s-succeeded)"><i class="sd"></i><span class="nm"><b>support-triage</b><small>run_44f0 · closed</small></span><span class="cost">$0.02</span></div>
+          </aside>
+          <div class="main">
+            <div class="main-h">
+              <svg class="mascot-sm" viewBox="0 0 80 80" aria-hidden="true">
+                <use href="#det"/>
+                <g class="prop"><path d="M64 14l6.4 0 4.6 4.6v6.4l-4.6 4.6H64l-4.6-4.6v-6.4z" fill="#E5484D" stroke="var(--m-ink)" stroke-width="1.6"/><path d="M62.5 21.8h9" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></g>
+              </svg>
+              <div><h3>research-agent</h3><div class="sub">run_d07e · started 14:02:11 · worker w-3</div></div>
+              <span class="pill st st-halted">Halted</span>
+            </div>
+            <div class="stats">
+              <div><small>Spend</small><b>$0.485 <em>/ $0.50</em></b></div>
+              <div><small>Steps</small><b>22 <em>/ 25</em></b></div>
+              <div><small>Model</small><b>haiku <em>↓ sonnet</em></b></div>
+              <div><small>Stopped by</small><b>kill_switch</b></div>
+            </div>
+            <div class="chart">
+              <div class="chart-h"><b>Spend per step</b><span>soft limit $0.40 · hard cap $0.50</span></div>
+              <svg viewBox="0 0 540 160" aria-hidden="true">
+                <defs>
+                  <linearGradient id="gA" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5B8CFF" stop-opacity=".28"/><stop offset="1" stop-color="#5B8CFF" stop-opacity="0"/></linearGradient>
+                  <linearGradient id="gB" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#E8A93A" stop-opacity=".28"/><stop offset="1" stop-color="#E8A93A" stop-opacity="0"/></linearGradient>
+                </defs>
+                <g stroke="rgba(255,255,255,.05)"><path d="M20 140H530M20 107H530M20 74H530"/></g>
+                <path d="M20 30.9H530" stroke="#F07A3C" stroke-width="1" stroke-dasharray="4 4" opacity=".8"/>
+                <text x="530" y="24" text-anchor="end" fill="#F07A3C" font-size="10" font-family="JetBrains Mono, monospace">hard cap $0.50</text>
+                <path d="M20 52.7H530" stroke="#E8A93A" stroke-width="1" stroke-dasharray="2 4" opacity=".7"/>
+                <text x="20" y="47" fill="#E8A93A" font-size="10" font-family="JetBrains Mono, monospace">soft limit $0.40 → downgrade</text>
+                <path class="fade-in" style="animation-delay:1.6s" d="M20 140L42 135.6L64 131.3L86 126.9L108 121.5L130 116L152 110.5L174 105.1L196 99.6L218 94.2L240 88.7L262 83.3L284 77.8L306 72.4L328 66.9L350 61.5L372 56L394 50.5V140Z" fill="url(#gA)"/>
+                <path class="fade-in" style="animation-delay:2.6s" d="M394 50.5L416 47.3L438 44L460 40.7L482 37.5L504 34.2V140H394Z" fill="url(#gB)"/>
+                <path class="spend-line" d="M20 140L42 135.6L64 131.3L86 126.9L108 121.5L130 116L152 110.5L174 105.1L196 99.6L218 94.2L240 88.7L262 83.3L284 77.8L306 72.4L328 66.9L350 61.5L372 56L394 50.5" fill="none" stroke="#5B8CFF" stroke-width="2.2" stroke-linejoin="round"/>
+                <path class="spend-line l2" d="M394 50.5L416 47.3L438 44L460 40.7L482 37.5L504 34.2" fill="none" stroke="#E8A93A" stroke-width="2.2" stroke-linejoin="round"/>
+                <g class="fade-in" style="animation-delay:2.1s"><circle cx="394" cy="50.5" r="5" fill="#0D0D0F" stroke="#E8A93A" stroke-width="2"/></g>
+                <g class="fade-in" style="animation-delay:3.2s">
+                  <path d="M501 26.2h6l4.2 4.2v6l-4.2 4.2h-6l-4.2-4.2v-6z" transform="translate(0 0.8)" fill="#F07A3C"/>
+                  <path d="M501.5 34.5h5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                </g>
+                <g fill="#6B6B74" font-size="9.5" font-family="JetBrains Mono, monospace"><text x="20" y="155">step 0</text><text x="252" y="155">11</text><text x="384" y="155">17</text><text x="496" y="155">22</text></g>
+              </svg>
+            </div>
+            <div class="events">
+              <div class="ev"><span class="sq">#70</span><span class="ty">CostRecorded</span><span class="pl">cumulative $0.410 · claude-sonnet-5-5</span><span class="rt">14:05:38</span></div>
+              <div class="ev warn"><span class="sq">#71</span><span class="ty">PolicyEvaluated</span><span class="pl">kill_switch → <span class="v">downgrade</span> · sonnet → haiku · spent ≥ soft limit</span><span class="rt">14:05:38</span></div>
+              <div class="ev"><span class="sq">#72</span><span class="ty">LLMRequested</span><span class="pl">claude-haiku-5-5 · 14 msgs · 3 tools</span><span class="rt">14:05:38</span></div>
+              <div class="ev gap"><span>· · ·</span></div>
+              <div class="ev"><span class="sq">#94</span><span class="ty">ToolFailed</span><span class="pl">search_web · TIMEOUT · attempt 2 of 3</span><span class="rt">14:06:52</span></div>
+              <div class="ev stop"><span class="sq">#97</span><span class="ty">PolicyEvaluated</span><span class="pl">kill_switch → <span class="v">deny(halt)</span> · projected $0.503 &gt; cap $0.50</span><span class="rt">14:06:55</span></div>
+              <div class="ev stop"><span class="sq">#98</span><span class="ty">RunHalted</span><span class="pl">policy=kill_switch · spent=$0.485 · steps=22</span><span class="rt">14:06:55</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── Integrations ───────── -->
+<section class="logos">
+  <div class="wrap">
+    <p>Exports to the tools you already run. Wraps the frameworks you already use.</p>
+  </div>
+  <div class="marquee" aria-label="Integrations">
+    <div class="marquee-track" id="marquee">
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>OpenTelemetry</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18L12 4l8 14z"/></svg>Langfuse</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16M12 4v16"/></svg>Jaeger</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="4"/></svg>Grafana Tempo</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19L19 5M5 5h6M13 19h6"/></svg>LangSmith</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18M6 6l12 12"/></svg>Arize</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="12" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8 7l8 4M8 17l8-4"/></svg>LangGraph</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10l3 2-3 2M12 14h4"/></svg>E2B</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3 3 7 3s7-1.3 7-3V6"/></svg>PostgreSQL</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 3L5 13h6l-1 8 8-10h-6z"/></svg>FastAPI</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 14H4z"/><path d="M12 9v4"/></svg>Pydantic</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12h8"/></svg>gVisor</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7l8-4 8 4-8 4zM4 12l8 4 8-4M4 17l8 4 8-4"/></svg>pgvector</span>
+      <span class="wm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Playwright</span>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── Problem ───────── -->
+<section class="section" id="product">
+  <div class="wrap">
+    <div class="problem-head">
+      <div class="reveal">
+        <span class="eyebrow"><i class="dot"></i>The problem</span>
+        <h2 class="h2">Agents work in the demo. Then they meet <span class="serif">production.</span></h2>
+      </div>
+      <p class="lede reveal d1">The loop around the model usually isn't engineered like the rest of your stack. The same five failures show up every time, and teams patch them one library at a time. Gumshoe fixes all five with one mechanism.</p>
+    </div>
+    <div class="fails">
+      <article class="fail reveal">
+        <span class="num">01</span>
+        <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M34 14a13 13 0 10 3 12"/><path d="M36 6v8h-8"/><path d="M22 20v8l5 3"/></svg>
+        <h4>Blocking loops</h4>
+        <p>A <code>while True</code> loop holds a thread, can't serve concurrent traffic, and dies messily on the first error.</p>
+        <div class="fix">Async orchestrator: 100+ runs per worker on one event loop.</div>
+      </article>
+      <article class="fail reveal d1">
+        <span class="num">02</span>
+        <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 10c-4 0-4 4-4 7s-2 5-4 7c2 2 4 4 4 7s0 7 4 7M34 10c4 0 4 4 4 7s2 5 4 7c-2 2-4 4-4 7s0 7-4 7"/><path d="M20 20l8 8M28 20l-8 8"/></svg>
+        <h4>Untrusted outputs</h4>
+        <p>Models hallucinate tool parameters. Raw LLM output should never touch a real API.</p>
+        <div class="fix">Typed tool router with self-healing retries.</div>
+      </article>
+      <article class="fail reveal d2">
+        <span class="num">03</span>
+        <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 38l10-10 7 6 19-22"/><path d="M34 12h8v8"/><path d="M6 44h36"/></svg>
+        <h4>Runaway cost</h4>
+        <p>A loop that never converges keeps calling the model. It's an outage that arrives as an invoice.</p>
+        <div class="fix">Cost kill-switch: downgrade at a soft limit, halt at the cap.</div>
+      </article>
+      <article class="fail reveal d3">
+        <span class="num">04</span>
+        <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M24 5l15 6v11c0 10-7 17-15 21-8-4-15-11-15-21V11z"/><path d="M24 17v9M24 31v.5"/></svg>
+        <h4>Unchecked actions</h4>
+        <p>Refunds, deletions and outbound messages run without sign-off. Generated code runs on the host.</p>
+        <div class="fix">Approval gate and an isolated sandbox executor.</div>
+      </article>
+      <article class="fail reveal d3">
+        <span class="num">05</span>
+        <svg class="ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="12" r="4"/><circle cx="10" cy="36" r="4"/><circle cx="38" cy="24" r="4"/><path d="M10 16v16M14 12c10 0 12 12 20 12"/><path d="M31 33l7 7M38 33l-7 7" /></svg>
+        <h4>Silent regressions</h4>
+        <p>A prompt tweak changes which tools get called. You only grade the final text, so nobody notices.</p>
+        <div class="fix">Trajectory replay and a CI gate on every pull request.</div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── One mechanism (dark band) ───────── -->
+<section class="dark-band">
+  <div class="wrap section">
+    <div class="reveal">
+      <span class="eyebrow"><i class="dot" style="background:var(--hl)"></i>How it works</span>
+      <h2 class="h2" style="max-width:820px">One run state. One event log. <span class="serif" style="color:var(--hl)">Everything else for free.</span></h2>
+      <p class="lede">Every agent run is a durable, typed state machine. Each transition is a versioned event in an append-only log. Guards, approvals, tracing, replay and the CI gate all read that same log, so none of them needs its own instrumentation.</p>
+    </div>
+    <div class="formula reveal d1" aria-label="state two, commands equals f of state one, input">
+      <span>(<span class="k">state₂</span>, <span class="k">commands</span>)</span><span>=</span><span><span class="f">step</span>(<span class="k">state₁</span>, <span class="k">input</span>)</span>
+      <span class="c">The core never does I/O. LLM calls and tool calls are commands the shell executes.</span>
+    </div>
+    <div class="principles reveal d2">
+      <div class="principle"><span class="n">01 · Pure core</span><h4>Deterministic by construction</h4><p>No clock, no randomness, no network inside <code>step</code>. Time and ids arrive as data, so the same inputs always yield the same commands. Replay, shadow runs and pause/resume just work.</p></div>
+      <div class="principle"><span class="n">02 · Event log</span><h4>The log is the source of truth</h4><p>State is a fold over the log. A run resumes on any worker, survives a crash without duplicating a side effect, and replays offline exactly as it happened.</p></div>
+      <div class="principle"><span class="n">03 · One policy shape</span><h4>Every guard is a function</h4><p><code>evaluate(state, action)</code> returns <code>allow</code>, <code>deny</code>, <code>pause</code> or <code>downgrade</code>. The kill-switch, sanitizer and approval gate share it, and so do yours.</p></div>
+    </div>
+
+    <div class="arch-wrap">
+      <div class="reveal">
+        <span class="eyebrow">Architecture</span>
+        <h3>Five modules, <span class="serif" style="color:var(--hl)">one contract.</span></h3>
+        <p>The runtime writes every transition through <code>core</code>. Guards plug into the same policy interface. The lab only reads the log, which is why replay and CI need no extra wiring.</p>
+        <p style="color:var(--ink-fg-3);font-size:14px">Built on PostgreSQL with <code style="color:var(--ink-fg-2)">SKIP LOCKED</code>, SQLite for local development. No Redis, no Kafka, no extra moving parts.</p>
+      </div>
+      <svg class="arch-svg reveal d1" viewBox="0 0 680 380" role="img" aria-label="Architecture: runtime, core and guard sit above the event log; lab and extras sit below and read from it.">
+        <defs>
+          <marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#6B6B74"/></marker>
+          <linearGradient id="logg" x1="0" x2="1"><stop offset="0" stop-color="#F2B35B" stop-opacity=".16"/><stop offset="1" stop-color="#5B8CFF" stop-opacity=".16"/></linearGradient>
+        </defs>
+        <!-- top boxes -->
+        <g font-size="14" fill="#EDEDEF">
+          <rect x="20" y="20" width="190" height="84" rx="12" fill="#151518" stroke="rgba(255,255,255,.12)"/>
+          <text x="38" y="50" font-weight="600">runtime</text>
+          <text x="38" y="72" font-size="11.5" fill="#A1A1AA">orchestrator · tool router</text>
+          <text x="38" y="89" font-size="11.5" fill="#A1A1AA">self-healing · memory</text>
+
+          <rect x="245" y="20" width="190" height="84" rx="12" fill="#1A1712" stroke="rgba(242,179,91,.55)"/>
+          <text x="263" y="50" font-weight="600" fill="#F2B35B">core</text>
+          <text x="263" y="72" font-size="11.5" fill="#A1A1AA">state machine · events</text>
+          <text x="263" y="89" font-size="11.5" fill="#A1A1AA">commands · policy · tracer</text>
+
+          <rect x="470" y="20" width="190" height="84" rx="12" fill="#151518" stroke="rgba(255,255,255,.12)"/>
+          <text x="488" y="50" font-weight="600">guard</text>
+          <text x="488" y="72" font-size="11.5" fill="#A1A1AA">kill-switch · approvals</text>
+          <text x="488" y="89" font-size="11.5" fill="#A1A1AA">sandbox · sanitizer</text>
+        </g>
+        <!-- connectors top -->
+        <path d="M210 62H243" stroke="#6B6B74" stroke-width="1.5" marker-end="url(#ar)"/>
+        <path d="M468 62H437" stroke="#6B6B74" stroke-width="1.5" marker-end="url(#ar)"/>
+        <text x="440" y="132" font-size="10.5" fill="#6B6B74" class="mono" text-anchor="middle">evaluate()</text>
+        <path d="M340 104V164" stroke="#F2B35B" stroke-width="1.6" class="flow-dash" marker-end="url(#ar)"/>
+        <text x="350" y="140" font-size="10.5" fill="#F2B35B" class="mono">append</text>
+        <path d="M115 104V164" stroke="#6B6B74" stroke-width="1.5" class="flow-dash" marker-end="url(#ar)"/>
+        <text x="125" y="140" font-size="10.5" fill="#6B6B74" class="mono">commands</text>
+        <!-- event log -->
+        <rect x="20" y="168" width="640" height="56" rx="14" fill="url(#logg)" stroke="rgba(255,255,255,.14)"/>
+        <text x="40" y="201" font-size="13" font-weight="600" fill="#EDEDEF">event log</text>
+        <text x="40" y="215" font-size="10" fill="#6B6B74" class="mono">append-only · versioned</text>
+        <g id="ticks"></g>
+        <!-- bottom -->
+        <path d="M200 226V284" stroke="#6B6B74" stroke-width="1.5" class="flow-dash" marker-end="url(#ar)"/>
+        <text x="210" y="258" font-size="10.5" fill="#6B6B74" class="mono">read · replay · diff</text>
+        <path d="M480 226V284" stroke="#6B6B74" stroke-width="1.5" class="flow-dash" marker-end="url(#ar)"/>
+        <text x="490" y="258" font-size="10.5" fill="#6B6B74" class="mono">read · export</text>
+        <g font-size="14" fill="#EDEDEF">
+          <rect x="105" y="288" width="190" height="72" rx="12" fill="#151518" stroke="rgba(255,255,255,.12)"/>
+          <text x="123" y="318" font-weight="600">lab</text>
+          <text x="123" y="340" font-size="11.5" fill="#A1A1AA">replay · diff · CI gate · shadow</text>
+          <rect x="385" y="288" width="190" height="72" rx="12" fill="#151518" stroke="rgba(255,255,255,.12)"/>
+          <text x="403" y="318" font-weight="600">extras · OTel</text>
+          <text x="403" y="340" font-size="11.5" fill="#A1A1AA">swarm · browser · spans</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── Feature deep dives ───────── -->
+<section class="section" id="features" style="padding-bottom:40px">
+  <div class="wrap">
+
+    <!-- Runtime -->
+    <div class="feature">
+      <div class="f-text reveal">
+        <span class="tag" style="--c:var(--s-running)"><i></i>gumshoe.runtime</span>
+        <h3>A hundred agents on one event loop. <span class="serif">None of them blocking.</span></h3>
+        <p>Submit runs over HTTP or the CLI. Workers claim them with leases, bound concurrency with backpressure, and survive crashes without running a refund twice.</p>
+        <ul class="checks">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span><b>Typed tool calls.</b> Tools are Pydantic models. Every LLM output is validated before anything runs.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span><b>Self-healing retries.</b> Up to three attempts, with the validation error fed back to the model.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span><b>Crash-safe.</b> Idempotency keys on every command. Kill a worker mid-run and another one finishes it.</span></li>
+        </ul>
+      </div>
+      <div class="panel reveal d1">
+        <div class="panel-h"><b>gumshoe demo</b><span class="mono" id="gridCounter">0 / 100 closed</span></div>
+        <div class="grid100" id="grid100" aria-label="Animated grid of 100 concurrent agent runs"></div>
+        <div class="legend">
+          <span style="--c:var(--s-running)"><i></i>running <b id="cRun">0</b></span>
+          <span style="--c:var(--s-succeeded)"><i></i>succeeded <b id="cOk">0</b></span>
+          <span style="--c:var(--s-paused)"><i></i>paused <b id="cPause">0</b></span>
+          <span style="--c:var(--s-halted)"><i></i>halted <b id="cHalt">0</b></span>
+        </div>
+        <div class="heal">
+          <div class="heal-title">Self-healing · run_8f2c · step 4</div>
+          <div><span class="m">#31</span> ToolCallProposed  issue_refund {"order": <span class="r">4471</span>, "amount": <span class="r">"240"</span>}</div>
+          <div><span class="m">#32</span> <span class="r">ToolCallRejected</span>  attempt 1 · order_id: field required · amount_usd: field required</div>
+          <div><span class="m">#33</span> <span class="y">RetryScheduled</span>    VALIDATION · error fed back to model</div>
+          <div><span class="m">#35</span> ToolCallProposed  issue_refund {"order_id": "4471", "amount_usd": 240.0}</div>
+          <div><span class="m">#36</span> <span class="g">ToolCallValidated</span> ✓ · command_id 5f1c…a90e</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Guard -->
+    <div class="feature flip">
+      <div class="f-text reveal">
+        <span class="tag" style="--c:var(--s-paused)"><i></i>gumshoe.guard</span>
+        <h3>Guardrails that act, <span class="serif">not just observe.</span></h3>
+        <p>Dashboards tell you an agent went rogue after the fact. Gumshoe's policies run inside every step, before a command leaves the core, and every decision is written to the log.</p>
+        <ul class="checks">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span><b>Cost kill-switch.</b> Projects spend before each call, falls back to a cheaper model at the soft limit, halts at the hard cap.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span><b>Approval gate.</b> High-stakes tools pause the run. It waits days, not threads, and resumes from its snapshot.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span><b>Sandbox and sanitizer.</b> Generated code runs in gVisor or E2B with no egress. Injected instructions get flagged.</span></li>
+        </ul>
+      </div>
+      <div class="panel reveal d1">
+        <div class="panel-h"><b>#agent-approvals</b><span class="mono">run_77b1 · PAUSED</span></div>
+        <div class="guard-stack">
+          <div class="msg">
+            <svg class="av" viewBox="0 0 80 80" aria-hidden="true"><use href="#det"/></svg>
+            <div>
+              <div class="who"><b>Gumshoe</b><span>APP · 10:42</span></div>
+              <p><b>billing-agent</b> wants to run <code>issue_refund</code>. This tool is tagged <code>payments</code> and needs a human.</p>
+              <div class="kv">
+                <div><small>Order</small><b>#4471</b></div>
+                <div><small>Amount</small><b>$240.00</b></div>
+                <div><small>Reason (agent)</small><b>damaged on arrival</b></div>
+                <div><small>Spend so far</small><b>$0.06</b></div>
+              </div>
+              <div class="actions"><span class="ap">Approve</span><span>Deny</span><span>View trace</span></div>
+            </div>
+          </div>
+          <div class="timeline-mini">
+            <span style="color:var(--s-paused)">PAUSED 10:42</span><span class="seg wait"></span><span>state persisted · 0 threads held</span><span class="seg"></span><span style="color:var(--s-succeeded)">RUNNING +2d 4h</span>
+          </div>
+          <div class="kill">
+            <div>max_cost_usd<b>$0.50</b></div>
+            <div>soft_limit_ratio<b>0.8</b></div>
+            <div>max_repeat_calls<b>3</b></div>
+          </div>
+          <div class="verdicts">
+            <span><i style="--c:var(--s-succeeded)">●</i> allow</span>
+            <span><i style="--c:var(--s-paused)">●</i> pause</span>
+            <span><i style="--c:var(--s-running)">●</i> downgrade</span>
+            <span><i style="--c:var(--s-failed)">●</i> deny</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lab -->
+    <div class="feature">
+      <div class="f-text reveal">
+        <span class="tag" style="--c:var(--s-succeeded)"><i></i>gumshoe.lab</span>
+        <h3>Catch the regression <span class="serif">before it merges.</span></h3>
+        <p>Your prompt change still produces a nice answer. It also stopped verifying identity before issuing refunds. The CI gate replays recorded runs, compares every tool-call path against its golden DAG, and blocks the pull request.</p>
+        <ul class="checks">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span><b>Deterministic replay.</b> LLM and tool calls are served from recordings. Fast, free, identical every time.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span><b>Tolerant diffs.</b> Mark steps as reorderable or required, so the gate stays strict without crying wolf.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span><b>Any agent.</b> Ingests any OpenTelemetry GenAI trace, not just Gumshoe runs. Shadow 5% of live traffic to a new topology.</span></li>
+        </ul>
+      </div>
+      <div class="panel reveal d1">
+        <div class="panel-h"><b>Pull request · “Tighten refund prompt”</b><span class="mono">checks</span></div>
+        <div class="pr">
+          <div class="pr-top">
+            <svg class="av" viewBox="0 0 80 80" aria-hidden="true"><use href="#det"/></svg>
+            <span><b>gumshoe-lab</b> commented · trajectory check</span>
+          </div>
+          <div class="pr-card">
+            <div class="pr-status"><span class="x">✕</span>1 of 24 trajectories deviated<small>replayed in 41s · $0.00</small></div>
+            <div class="dag">
+              <span class="lbl">golden</span>
+              <div class="nodes"><span class="node">lookup_order</span><span class="edge"></span><span class="node req">verify_identity</span><span class="edge"></span><span class="node">issue_refund</span></div>
+              <span class="lbl">this PR</span>
+              <div class="nodes"><span class="node">lookup_order</span><span class="edge"></span><span class="node miss">verify_identity</span><span class="edge"></span><span class="node">issue_refund</span></div>
+            </div>
+            <table class="pr-table">
+              <thead><tr><th>Trajectory</th><th>Path</th><th>Cost Δ</th></tr></thead>
+              <tbody>
+                <tr><td>refund_damaged_item</td><td class="bad">required step missing</td><td class="meh">+18%</td></tr>
+                <tr><td>refund_partial</td><td class="good">match (reordered ok)</td><td class="good">−4%</td></tr>
+                <tr><td>escalate_to_human</td><td class="good">match</td><td>±0%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── Modules ───────── -->
+<section class="section" id="modules" style="padding-top:72px">
+  <div class="wrap">
+    <div class="mod-head reveal">
+      <span class="eyebrow"><i class="dot"></i>The platform</span>
+      <h2 class="h2">Everything you need between <span class="serif">the model and the world.</span></h2>
+      <p class="lede">Adopt one module or all five. They share one contract, so each new piece makes the others more useful.</p>
+    </div>
+    <div class="tabwrap reveal d1">
+      <div class="tabs" role="tablist" aria-label="Modules">
+        <button class="tab" role="tab" aria-selected="true" aria-controls="m-core" id="t-core">core</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="m-runtime" id="t-runtime">runtime</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="m-guard" id="t-guard">guard</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="m-lab" id="t-lab">lab</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="m-extras" id="t-extras">extras</button>
+      </div>
+    </div>
+
+    <div class="mod-panel on" id="m-core" role="tabpanel" aria-labelledby="t-core">
+      <div class="mod-intro"><span class="mname">gumshoe.core</span><h3>The shared contract</h3><p>Plain, frozen data and one pure step function. Everything else in Gumshoe is built on these types, and the core never imports I/O, asyncio or the clock.</p><div class="install"><code>pip install gumshoe-core</code></div></div>
+      <div class="mod-feats">
+        <div class="mf"><div class="mf-h"><h4>Run state machine</h4><span class="since">v0.1</span></div><p><code>PENDING → RUNNING → PAUSED / SUCCEEDED / FAILED / HALTED</code>, with every allowed and forbidden transition property-tested.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Versioned events</h4><span class="since">v0.1</span></div><p>Gapless per-run sequence, schema versions and upcasters, so old runs keep loading after you upgrade.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Policy interface</h4><span class="since">v0.1</span></div><p>One <code>evaluate()</code> shape for every guard. All policies run, the most restrictive verdict wins, every decision is logged.</p></div>
+        <div class="mf"><div class="mf-h"><h4>OpenTelemetry tracer</h4><span class="since">v0.1</span></div><p>One span per transition with GenAI semantic conventions. Export over OTLP to Jaeger, Tempo, Langfuse, LangSmith or Arize.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Event store</h4><span class="since">v0.1</span></div><p>Append-only, with inbox and outbox in one transaction. SQLite in dev, PostgreSQL in production.</p></div>
+        <div class="mf"><div class="mf-h"><h4>State snapshots</h4><span class="since">v0.4</span></div><p>Versioned snapshots let long runs load fast and resume cleanly across schema changes.</p></div>
+      </div>
+    </div>
+
+    <div class="mod-panel" id="m-runtime" role="tabpanel" aria-labelledby="t-runtime">
+      <div class="mod-intro"><span class="mname">gumshoe.runtime</span><h3>The execution engine</h3><p>The thin, effectful shell around the pure core. It talks to providers, runs tools, holds leases and keeps the event loop free.</p><div class="install"><code>pip install gumshoe-runtime</code></div></div>
+      <div class="mod-feats">
+        <div class="mf"><div class="mf-h"><h4>Async orchestrator</h4><span class="since">v0.1</span></div><p>100+ concurrent runs per worker, leases with epoch fencing, backpressure, cancellation and graceful shutdown. FastAPI included.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Tool router</h4><span class="since">v0.1</span></div><p>Register tools with a decorator. JSON Schema comes straight from your Pydantic models. Native structured output where the provider has it.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Self-healing retries</h4><span class="since">v0.1</span></div><p>Errors are classified as validation, tool, transient, policy or fatal, and each class gets the right retry strategy.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Context budget</h4><span class="since">v0.4</span></div><p>Per-slot token allocation for system prompt, documents, tool schemas and history, with trimming and a usage report per request.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Pause and resume</h4><span class="since">v0.4</span></div><p>Persist a run and pick it up on an external trigger, days later, on any worker, without holding a thread.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Memory</h4><span class="since">v1.0</span></div><p>Scratchpad, episodic compression and vector search on pgvector, with TTL eviction. No extra database.</p></div>
+      </div>
+    </div>
+
+    <div class="mod-panel" id="m-guard" role="tabpanel" aria-labelledby="t-guard">
+      <div class="mod-intro"><span class="mname">gumshoe.guard</span><h3>Policies and isolation</h3><p>Pure policies that decide, and an isolated executor for code you didn't write. Add your own guard in a dozen lines.</p><div class="install"><code>pip install gumshoe-guard</code></div></div>
+      <div class="mod-feats">
+        <div class="mf"><div class="mf-h"><h4>Cost kill-switch</h4><span class="since">v0.1</span></div><p>Tracks loop depth, repeats and projected spend. Downgrades at the soft limit and halts at the hard cap ($0.50 by default).</p></div>
+        <div class="mf"><div class="mf-h"><h4>Approval gate</h4><span class="since">v0.4</span></div><p>Tag tools as high-stakes. Approvals arrive in Slack, wait up to three days, and the audit log records who said yes and when.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Sandbox executor</h4><span class="since">v0.4</span></div><p>Generated code runs in E2B or gVisor with no internet egress and hard CPU, memory and time limits.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Sanitizer</h4><span class="since">v0.7</span></div><p>Hooks inter-agent messages and tool results, flags suspicious instructions, and tags the provenance of every message.</p></div>
+      </div>
+    </div>
+
+    <div class="mod-panel" id="m-lab" role="tabpanel" aria-labelledby="t-lab">
+      <div class="mod-intro"><span class="mname">gumshoe.lab</span><h3>Evaluation and regression</h3><p>Turn production runs into tests. One diff engine, used on your laptop and in CI, reading the same log the runtime writes.</p><div class="install"><code>pip install gumshoe-lab</code></div></div>
+      <div class="mod-feats">
+        <div class="mf"><div class="mf-h"><h4>Record and replay</h4><span class="since">v0.7</span></div><p>Replay any run from its event log with LLM and tool calls served from recordings. Policies replay too.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Trajectory diff</h4><span class="since">v0.7</span></div><p>Compare a run to a golden DAG with tolerance: which steps may reorder and which are required.</p></div>
+        <div class="mf"><div class="mf-h"><h4>CI gate</h4><span class="since">v0.7</span></div><p>A GitHub Action that replays trajectories, blocks the PR on deviation and posts the report. Works with any OTel GenAI trace.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Shadow comparator</h4><span class="since">v1.0</span></div><p>Mirror 5% of live traffic to a new topology, silently, and diff tool-call paths and cost before you switch.</p></div>
+      </div>
+    </div>
+
+    <div class="mod-panel" id="m-extras" role="tabpanel" aria-labelledby="t-extras">
+      <div class="mod-intro"><span class="mname">gumshoe.extras</span><h3>Built on the kernel</h3><p>Optional pieces for bigger systems. They get durability, guards and replay for free because they sit on the same contract.</p><div class="install"><code>pip install "gumshoe-ai[extras]"</code></div></div>
+      <div class="mod-feats">
+        <div class="mf"><div class="mf-h"><h4>Typed swarm</h4><span class="since">v1.0</span></div><p>Agents hand off typed state objects, never raw text. Every hand-off is an event you can trace and replay.</p></div>
+        <div class="mf"><div class="mf-h"><h4>LangGraph adapter</h4><span class="since">v1.0</span></div><p>Keep your graph. Gumshoe wraps it with a durable runtime, guards and a CI gate.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Browser fallback</h4><span class="since">v1.0</span></div><p>When a REST call 404s or times out, finish the step with Playwright inside the sandbox.</p></div>
+        <div class="mf"><div class="mf-h"><h4>Adapters in, OTel out</h4><span class="since">v1.0</span></div><p>Framework-agnostic at the edges: bring PydanticAI, Strands or the OpenAI Agents SDK, export anywhere.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── Developers / code ───────── -->
+<section class="section" id="developers" style="background:var(--bg-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap code-grid">
+    <div class="reveal">
+      <span class="eyebrow"><i class="dot"></i>For developers</span>
+      <h2 class="h2">Bring your agent. <span class="serif">Keep your code.</span></h2>
+      <p class="lede">Gumshoe isn't another framework for writing reasoning logic. It's the production runtime around it: plain Python, Pydantic models and a few lines of configuration.</p>
+      <div class="code-steps" role="tablist" aria-label="Code examples">
+        <button role="tab" aria-selected="true" data-code="c1"><span class="n">01</span><span><b>Define tools and an agent</b><span>Pydantic in, validated calls out.</span></span></button>
+        <button role="tab" aria-selected="false" data-code="c2"><span class="n">02</span><span><b>Write your own policy</b><span>One pure function, four possible verdicts.</span></span></button>
+        <button role="tab" aria-selected="false" data-code="c3"><span class="n">03</span><span><b>Gate every pull request</b><span>Replay trajectories in CI. Block on deviation.</span></span></button>
+      </div>
+    </div>
+    <div class="editor reveal d1">
+      <div class="editor-tabs" id="editorTabs"><span class="on">agent.py</span><span>policies.py</span><span>.github/workflows/agents.yml</span></div>
+<pre class="code-panel on" id="c1" data-lang="py" data-hl="17,18,19,20">from pydantic import BaseModel
+from gumshoe import Runtime, ReActAgent, tool
+from gumshoe.guard import KillSwitch, ApprovalGate
+
+class Refund(BaseModel):
+    order_id: str
+    amount_usd: float
+
+@tool(risk=["payments"], idempotent=True)
+async def issue_refund(args: Refund) -> str:
+    return await payments.refund(args.order_id, args.amount_usd)
+
+agent = ReActAgent(model="claude-sonnet-5-5", tools=[lookup_order, issue_refund])
+
+runtime = Runtime(
+    store="postgresql://localhost/gumshoe",
+    policies=[
+        KillSwitch(max_cost_usd=0.50, fallback_model="claude-haiku-5-5"),
+        ApprovalGate(risk=["payments"], via="slack", timeout="3d"),
+    ],
+)
+
+run = await runtime.submit(agent, input="Refund order 4471, it arrived damaged")
+print(run.status)  # RUNNING, then PAUSED until a human approves</pre>
+<pre class="code-panel" id="c2" data-lang="py" data-hl="9,10,11">from gumshoe.core import Policy, PolicyContext, ProposedAction
+from gumshoe.core import Allow, Deny, Pause, Verdict
+
+class NoWeekendDeploys(Policy):
+    """Deploys on weekends need a human. Production writes never run in a dry run."""
+    name = "no_weekend_deploys"
+
+    def evaluate(self, ctx: PolicyContext, action: ProposedAction) -> Verdict:
+        if action.tool == "deploy" and ctx.now.weekday() >= 5:
+            return Pause("weekend deploy", approval="#release-captains")
+        if "prod_write" in action.risk and ctx.config.dry_run:
+            return Deny("dry run cannot write to production", halt=False)
+        return Allow()
+
+# Pure: no I/O, no clock reads (ctx.now arrives as data), no counters.
+# Every verdict is written to the log as a PolicyEvaluated event,
+# so replays and CI reproduce the exact same decisions.
+runtime = Runtime(policies=[KillSwitch(), NoWeekendDeploys()])</pre>
+<pre class="code-panel" id="c3" data-lang="yaml" data-hl="14,15,16,17,18">name: agent-trajectories
+on: pull_request
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Replays recorded runs, diffs tool-call paths against golden DAGs
+      - uses: gumshoe-ai/ci-gate@v1
+        with:
+          trajectories: tests/trajectories/
+          tolerance: reorderable      # required steps must still appear
+          max-cost-delta: "10%"       # fail if a change gets pricier
+          traces: otel                # works with any OTel GenAI trace
+
+# Result: a check that blocks the merge and a PR comment
+# showing which step changed and how the cost moved.</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── Every run is a case ───────── -->
+<section class="section" id="cases">
+  <div class="wrap">
+    <div class="mod-head reveal" style="margin-bottom:0">
+      <span class="eyebrow"><i class="dot"></i>Meet the detective</span>
+      <h2 class="h2">Every run is <span class="serif">a case.</span></h2>
+      <p class="lede">Gumshoe's mascot lives in the CLI, the run viewer and the docs, and its pose always tells you the run's state at a glance.</p>
+    </div>
+    <div class="cases">
+      <div class="case reveal" style="--c:var(--s-pending)">
+        <svg viewBox="0 0 80 80" aria-hidden="true"><use href="#det"/>
+          <g class="prop"><rect x="54" y="52" width="17" height="21" rx="2" class="mk-paper mk-stroke" stroke-width="1.8" transform="rotate(8 62 62)"/><path d="M58 59h9M58 63h9M58 67h6" class="mk-stroke" stroke-width="1.4" stroke-linecap="round" transform="rotate(8 62 62)"/></g>
+        </svg>
+        <span class="pill st st-pending">Pending</span><p>Briefing the case, notebook open.</p>
+      </div>
+      <div class="case reveal d1" style="--c:var(--s-running)">
+        <svg viewBox="0 0 80 80" aria-hidden="true"><use href="#det"/>
+          <g class="prop"><path d="M55 58l-7 9" class="mk-stroke" stroke-width="4" stroke-linecap="round"/><circle cx="61" cy="50" r="9" fill="#CFE0FF" fill-opacity=".7" class="mk-stroke" stroke-width="2.4"/><path d="M57 46.5a5 5 0 014-1.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none"/></g>
+        </svg>
+        <span class="pill st st-running">Running</span><p>Investigating, magnifying glass up.</p>
+      </div>
+      <div class="case reveal d2" style="--c:var(--s-paused)">
+        <svg viewBox="0 0 80 80" aria-hidden="true">
+          <g class="prop"><rect x="2" y="24" width="15" height="55" rx="1.5" fill="#B98552" class="mk-stroke" stroke-width="1.8"/><circle cx="13.5" cy="54" r="1.4" class="mk-ink"/></g>
+          <use href="#det"/>
+          <g class="prop"><circle cx="66" cy="60" r="8" class="mk-paper mk-stroke" stroke-width="2"/><path d="M66 55.5V60l3 2" class="mk-stroke" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M64 51h4" class="mk-stroke" stroke-width="2" stroke-linecap="round"/></g>
+        </svg>
+        <span class="pill st st-paused">Paused</span><p>Waiting by the door, checking a watch.</p>
+      </div>
+      <div class="case reveal d3" style="--c:var(--s-succeeded)">
+        <svg viewBox="0 0 80 80" aria-hidden="true"><use href="#det"/>
+          <g class="prop"><path d="M50 60h26v17H50z" fill="#E9C98F" class="mk-stroke" stroke-width="1.8" stroke-linejoin="round"/><path d="M50 60l3-4h9l2 4" fill="#E9C98F" class="mk-stroke" stroke-width="1.8" stroke-linejoin="round"/><rect x="54" y="64" width="18" height="8" rx="1.5" fill="none" stroke="#2F9D5B" stroke-width="1.6" transform="rotate(-8 63 68)"/><text x="63" y="70.4" text-anchor="middle" font-size="5" font-weight="700" fill="#2F9D5B" font-family="Inter, sans-serif" transform="rotate(-8 63 68)">CLOSED</text></g>
+        </svg>
+        <span class="pill st st-succeeded">Succeeded</span><p>Case closed, stamping the file.</p>
+      </div>
+      <div class="case reveal" style="--c:var(--s-failed)">
+        <svg viewBox="0 0 80 80" aria-hidden="true"><use href="#det"/>
+          <g class="prop"><text x="62" y="26" font-size="22" font-weight="700" fill="#EB5A5F" font-family="Inter, sans-serif">?</text><path d="M52 62h22v15H52z" class="mk-paper mk-stroke" stroke-width="1.8"/><path d="M56 67h14M56 71h9" class="mk-stroke" stroke-width="1.4" stroke-linecap="round"/></g>
+        </svg>
+        <span class="pill st st-failed">Failed</span><p>Puzzled, question mark over the file.</p>
+      </div>
+      <div class="case reveal d1" style="--c:var(--s-halted)">
+        <svg viewBox="0 0 80 80" aria-hidden="true"><use href="#det"/>
+          <g class="prop"><path d="M65 76V58" class="mk-stroke" stroke-width="2.4" stroke-linecap="round"/><path d="M60.5 40h9l6.4 6.4v9L69.5 62h-9l-6.4-6.4v-9z" fill="#F07A3C" class="mk-stroke" stroke-width="1.8"/><text x="65" y="53.6" text-anchor="middle" font-size="6" font-weight="800" fill="#fff" font-family="Inter, sans-serif">STOP</text></g>
+        </svg>
+        <span class="pill st st-halted">Halted</span><p>File sealed, stop sign up.</p>
+      </div>
+    </div>
+
+    <div class="term-wrap">
+      <div class="reveal">
+        <span class="eyebrow"><i class="dot"></i>Try it in one command</span>
+        <h3 style="font-size:clamp(28px,3.4vw,40px);letter-spacing:-0.035em;line-height:1.08;margin:16px 0 14px;font-weight:600">A hundred runs, one runaway, <span class="serif">zero API keys.</span></h3>
+        <p style="color:var(--fg-2);font-size:16.5px;margin:0 0 22px">The offline demo spins up a worker, submits 100 runs against a fake LLM, and lets one of them loop on a failing tool until the kill-switch steps in. Then open the same run as a trace in Jaeger or Langfuse.</p>
+        <button class="copy-cmd" data-copy="pip install gumshoe-ai && gumshoe demo" aria-label="Copy demo command"><span class="prompt">$</span> gumshoe demo<span class="cbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg></span></button>
+      </div>
+      <div class="term reveal d1">
+        <div class="chrome"><i></i><i></i><i></i><span class="title">~/agents — zsh</span></div>
+<pre id="term" aria-label="Terminal output of gumshoe demo"><span class="t-line"><span class="p">❯</span> <span class="w">gumshoe demo</span></span>
+<span class="t-line"><span class="dim">  worker w-1 · concurrency 100 · store sqlite://demo.db</span></span>
+<span class="t-line"><span class="dim">  submitting 100 runs against FakeLLM …</span></span>
+<span class="t-line"></span>
+<span class="t-line">  <span class="b">🔎 RUNNING  </span> 97   <span class="g">✓ SUCCEEDED</span> 0    <span class="o">■ HALTED</span> 0</span>
+<span class="t-line">  <span class="b">🔎 RUNNING  </span> 41   <span class="g">✓ SUCCEEDED</span> 56   <span class="o">■ HALTED</span> 0</span>
+<span class="t-line"></span>
+<span class="t-line">  <span class="y">⚠ run_d07e</span>  spent $0.41 ≥ soft limit $0.40</span>
+<span class="t-line">    <span class="dim">kill_switch → downgrade · sonnet → haiku</span></span>
+<span class="t-line">  <span class="o">⛔ run_d07e</span>  projected $0.503 &gt; cap $0.50</span>
+<span class="t-line">    <span class="dim">kill_switch → deny(halt) · 22 steps · RunHalted</span></span>
+<span class="t-line"></span>
+<span class="t-line">  <span class="g">✓ SUCCEEDED</span> 99   <span class="o">■ HALTED</span> 1   <span class="dim">p95 overhead 6.2 ms/step</span></span>
+<span class="t-line"></span>
+<span class="t-line"><span class="p">❯</span> <span class="w">gumshoe trace run_d07e</span> <span class="dim">--open jaeger</span></span>
+<span class="t-line"><span class="dim">  opened http://localhost:16686 · 98 events · 22 steps</span> <span class="caret"></span></span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── Metrics ───────── -->
+<section class="section-sm">
+  <div class="wrap">
+    <div class="metrics reveal">
+      <div class="metric"><b><span data-count="100">100</span><span class="serif">+</span></b><span>concurrent runs per worker on a single async event loop</span></div>
+      <div class="metric"><b><span class="serif">&lt;</span><span data-count="10">10</span><span style="font-size:.45em;letter-spacing:0;margin-left:4px">ms</span></b><span>runtime overhead per step at p95, excluding LLM latency</span></div>
+      <div class="metric"><b><span data-count="100">100</span><span class="serif">%</span></b><span>of recorded runs replay the exact same tool-call path</span></div>
+      <div class="metric"><b><span data-count="0">0</span></b><span>duplicated tool side effects after a worker crash</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── Roadmap / changelog ───────── -->
+<section class="section" id="roadmap" style="padding-top:72px">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="eyebrow"><i class="dot"></i>Changelog</span>
+      <h2 class="h2">From kernel to lab, <span class="serif">one gate at a time.</span></h2>
+      <p class="lede">Every phase shipped only after the previous one passed its gate. That's how a runtime earns trust: the contract came first, and everything after it was built on top, not bolted on.</p>
+    </div>
+    <div class="road">
+      <div class="phase reveal">
+        <span class="knot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span>
+        <div class="ver">v0.1 <span class="shipped">Shipped</span></div>
+        <h4>The <span class="serif">kernel</span></h4>
+        <p>Phase 1. The contract and the engine.</p>
+        <ul><li>core: events, state machine, policy interface</li><li>Async orchestrator, API and CLI</li><li>Tool router with self-healing retries</li><li>Cost kill-switch</li><li>OpenTelemetry tracing over OTLP</li></ul>
+        <div class="gate"><b>Gate passed</b>100 concurrent runs, one runaway halted, full trace in Jaeger.</div>
+      </div>
+      <div class="phase reveal d1">
+        <span class="knot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span>
+        <div class="ver">v0.4 <span class="shipped">Shipped</span></div>
+        <h4>The <span class="serif">guard</span></h4>
+        <p>Phase 2. Humans in the loop, code in a box.</p>
+        <ul><li>Pause and resume without holding threads</li><li>Approval gate via Slack, with audit log</li><li>Sandbox executor on E2B and gVisor</li><li>Context budget per slot</li><li>Versioned state snapshots</li></ul>
+        <div class="gate"><b>Gate passed</b>A refund paused for three days resumed from its snapshot, audited.</div>
+      </div>
+      <div class="phase reveal d2">
+        <span class="knot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span>
+        <div class="ver">v0.7 <span class="shipped">Shipped</span></div>
+        <h4>The <span class="serif">lab</span></h4>
+        <p>Phase 3. Runs become regression tests.</p>
+        <ul><li>Record and deterministic replay</li><li>Trajectory diff against golden DAGs</li><li>CI gate GitHub Action</li><li>Sanitizer with message provenance</li><li>Gumshoe Cloud: hosted CI gate</li></ul>
+        <div class="gate"><b>Gate passed</b>A prompt change that skipped a required step was blocked in CI.</div>
+      </div>
+      <div class="phase reveal d3">
+        <span class="knot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span>
+        <div class="ver">v1.0 <span class="shipped">Shipped</span></div>
+        <h4>The <span class="serif">agency</span></h4>
+        <p>Beyond. Bigger systems on the same kernel.</p>
+        <ul><li>Memory: scratchpad, episodic, pgvector</li><li>Shadow comparator on live traffic</li><li>Typed swarm and LangGraph adapter</li><li>Browser fallback with Playwright</li><li>Managed runtime and sandbox</li></ul>
+        <div class="gate"><b>Stable</b>Event schema and policy interface under semver from 1.0.</div>
+      </div>
+    </div>
+
+    <div class="compare reveal" id="compare">
+      <div class="compare-scroll">
+        <table>
+          <thead>
+            <tr><th>What you need in production</th><th class="us">Gumshoe</th><th>Observability</th><th>LLM gateways</th><th>Durable execution</th><th>Agent SDKs</th><th>Replay tools</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Acts on a run: halt, pause, block</td><td class="us yes">✓</td><td class="no">—</td><td class="part">per request</td><td class="no">—</td><td class="part">partial</td><td class="no">—</td></tr>
+            <tr><td>Spend cap per run and loop depth</td><td class="us yes">✓</td><td class="no">—</td><td class="part">per request</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+            <tr><td>Durable state, resume after days</td><td class="us yes">✓</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="part">partial</td><td class="no">—</td></tr>
+            <tr><td>Validated tool calls with self-healing</td><td class="us yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
+            <tr><td>Deterministic replay incl. policies</td><td class="us yes">✓</td><td class="no">—</td><td class="no">—</td><td class="part">workflow only</td><td class="no">—</td><td class="part">HTTP only</td></tr>
+            <tr><td>CI gate on tool-call trajectories</td><td class="us yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+            <tr><td>OpenTelemetry GenAI export</td><td class="us yes">✓</td><td class="yes">✓</td><td class="part">partial</td><td class="part">partial</td><td class="part">partial</td><td class="no">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p style="text-align:center;color:var(--fg-3);font-size:14px;margin:18px 0 0">Every category above is crowded on its own. Gumshoe's edge is the combination, all on one event log. And it exports to your observability stack instead of replacing it.</p>
+  </div>
+</section>
+
+<!-- ───────── Pricing ───────── -->
+<section class="section" id="pricing" style="background:var(--bg-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="mod-head reveal" style="margin-bottom:0">
+      <span class="eyebrow"><i class="dot"></i>Pricing</span>
+      <h2 class="h2">Free for one developer. <span class="serif">Fair for the whole team.</span></h2>
+      <p class="lede">What one engineer uses is open source under Apache 2.0, forever. What a team or an organization needs, we host for you.</p>
+    </div>
+    <div class="prices">
+      <div class="price reveal">
+        <h4>Open source</h4>
+        <p class="muted">The full runtime, self-hosted on your own Postgres.</p>
+        <div class="amt">$0<small>forever</small></div>
+        <button class="btn btn-ghost" data-copy="pip install gumshoe-ai">pip install gumshoe-ai</button>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>core, runtime and every guard policy</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Local gVisor sandbox executor</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Local replay, trajectory diff and the CI gate for small repos</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Swarm, browser fallback and all extras</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Community support on GitHub</li>
+        </ul>
+      </div>
+      <div class="price feat reveal d1">
+        <span class="badge">Most popular</span>
+        <h4>Team</h4>
+        <p class="muted">Hosted CI gate and approvals for teams shipping agents every week.</p>
+        <div class="amt">$24<small>per seat / month</small></div>
+        <a href="#" class="btn btn-primary">Start a 14-day trial</a>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Hosted CI gate with trajectory history</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>2,000 replays per month included</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Regression dashboard across repos</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Hosted approval gate, always on, state held for days</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Audit log of every approval and halt</li>
+        </ul>
+      </div>
+      <div class="price reveal d2">
+        <h4>Enterprise</h4>
+        <p class="muted">Managed infrastructure, central policies and an SLA.</p>
+        <div class="amt">Custom</div>
+        <a href="#" class="btn btn-ghost">Talk to us</a>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Managed runtime with autoscaling</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Managed sandbox and shadow comparator</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Central policies across teams, SSO</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Commercial license and support SLA</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Implementation help for your guardrails</li>
+        </ul>
+      </div>
+    </div>
+    <p class="price-note reveal"><b>Usage-based add-ons:</b> managed runtime billed per run · managed sandbox billed at usage · extra replays per 1,000.</p>
+  </div>
+</section>
+
+<!-- ───────── FAQ ───────── -->
+<section class="section" id="faq">
+  <div class="wrap faq-grid">
+    <div class="reveal">
+      <span class="eyebrow"><i class="dot"></i>FAQ</span>
+      <h2 class="h2">Questions, <span class="serif">investigated.</span></h2>
+      <p class="lede" style="font-size:16px">Can't find the answer? Open a discussion on GitHub. A human reads every one.</p>
+    </div>
+    <div class="faq reveal d1">
+      <details open><summary>Is Gumshoe an agent framework?<span class="pm"></span></summary><p>No. You bring your own agent logic, prompts and tools, or an existing framework like LangGraph. Gumshoe is the production runtime around it: concurrency, validation, guards, durable state, tracing and replay.</p></details>
+      <details><summary>Does it replace Langfuse, LangSmith or Arize?<span class="pm"></span></summary><p>No, it feeds them. Those tools observe; Gumshoe acts by halting, pausing and blocking. Every run exports as OpenTelemetry GenAI spans, so your existing dashboards keep working.</p></details>
+      <details><summary>How is this different from Temporal or DBOS?<span class="pm"></span></summary><p>Those are general-purpose durable workflow engines. Gumshoe is agent-aware: it validates tool calls, caps spend per run, tracks loop depth and repeats, and diffs tool-call trajectories. Durable execution covers agent runs only, and that focus is the point.</p></details>
+      <details><summary>Does the CI gate only work with Gumshoe runs?<span class="pm"></span></summary><p>No. The CI gate ingests any OpenTelemetry GenAI trace, so you can gate an agent built on any stack and adopt the runtime later, or never.</p></details>
+      <details><summary>What happens when a worker crashes mid-run?<span class="pm"></span></summary><p>Its lease expires and another worker claims the run, rebuilds state by folding the event log, and drains the outbox. Commands carry deterministic ids that double as idempotency keys. A tool not marked idempotent is never re-executed automatically; the run fails with <code>unsafe_resume</code> for a human to review.</p></details>
+      <details><summary>Where does my data live?<span class="pm"></span></summary><p>In your Postgres, when self-hosted. Use <code>full</code> capture for replayable runs, or <code>metadata_only</code> in production to store hashes, sizes and timings. A redaction hook runs before anything is appended, and secrets never enter state, commands or events.</p></details>
+      <details><summary>What's the license?<span class="pm"></span></summary><p>Apache 2.0 for all open-source code. The hosted services are separate products. The core contract will never be paid: a contract has to be open to be trusted.</p></details>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── CTA ───────── -->
+<section class="cta">
+  <div class="hero-bg" aria-hidden="true"></div>
+  <div class="wrap">
+    <svg class="cta-mascot reveal" viewBox="0 0 80 80" aria-hidden="true"><use href="#det"/>
+      <g class="prop"><path d="M55 58l-7 9" class="mk-stroke" stroke-width="4" stroke-linecap="round"/><circle cx="61" cy="50" r="9" fill="#CFE0FF" fill-opacity=".7" class="mk-stroke" stroke-width="2.4"/><path d="M57 46.5a5 5 0 014-1.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none"/></g>
+    </svg>
+    <h2 class="reveal d1">Close the case on <span class="serif">flaky agents.</span></h2>
+    <p class="lede reveal d2">Install in seconds. Run the demo offline. Put your first agent behind a spend cap before lunch.</p>
+    <div class="hero-cta reveal d3">
+      <button class="copy-cmd" data-copy="pip install gumshoe-ai" aria-label="Copy install command"><span class="prompt">$</span> pip install gumshoe-ai<span class="cbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg></span></button>
+      <a href="https://github.com/brendatamaar/gumshoe" target="_blank" rel="noopener" class="btn btn-primary">Star on GitHub <span aria-hidden="true">↗</span></a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ───────── Footer ───────── -->
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <a href="#top" class="brand"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--btn-bg)"/><circle cx="14" cy="14" r="6.5" fill="none" stroke="#F2B35B" stroke-width="2.6"/><path d="M19 19l6 6" stroke="#F2B35B" stroke-width="3" stroke-linecap="round"/></svg>Gumshoe</a>
+        <p class="tagline">Run your agents like production software: bounded, auditable and replayable.</p>
+      </div>
+      <div><h5>Product</h5><ul><li><a href="#product">Overview</a></li><li><a href="#features">Features</a></li><li><a href="#pricing">Pricing</a></li><li><a href="#roadmap">Changelog</a></li></ul></div>
+      <div><h5>Modules</h5><ul><li><a href="#modules">core</a></li><li><a href="#modules">runtime</a></li><li><a href="#modules">guard</a></li><li><a href="#modules">lab</a></li><li><a href="#modules">extras</a></li></ul></div>
+      <div><h5>Developers</h5><ul><li><a href="#developers">Quickstart</a></li><li><a href="https://github.com/brendatamaar/gumshoe/tree/main/docs" target="_blank" rel="noopener">Technical design</a></li><li><a href="https://github.com/brendatamaar/gumshoe" target="_blank" rel="noopener">GitHub</a></li><li><a href="#faq">FAQ</a></li></ul></div>
+      <div><h5>Resources</h5><ul><li><a href="https://brendatama.dev" target="_blank" rel="noopener">Field notes</a></li><li><a href="#compare">Comparisons</a></li><li><a href="#">Security</a></li><li><a href="#">Contact</a></li></ul></div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 Gumshoe · Open source under Apache 2.0</span>
+      <span class="status-ok"><i></i>All systems operational</span>
+    </div>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite">Copied to clipboard</div>
+
+<script>
+(() => {
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+  /* Theme */
+  const root = document.documentElement;
+  try { const t = localStorage.getItem('gumshoe-theme'); if (t) root.dataset.theme = t; } catch (e) {}
+  $('#themeBtn').addEventListener('click', () => {
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('gumshoe-theme', root.dataset.theme); } catch (e) {}
+  });
+
+  /* Nav */
+  const nav = $('#nav');
+  const onScroll = () => nav.classList.toggle('scrolled', scrollY > 8);
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+  const menuBtn = $('#menuBtn'), menu = $('#mobileMenu');
+  menuBtn.addEventListener('click', () => { const o = menu.classList.toggle('open'); menuBtn.setAttribute('aria-expanded', o); });
+  $$('#mobileMenu a').forEach(a => a.addEventListener('click', () => { menu.classList.remove('open'); menuBtn.setAttribute('aria-expanded', false); }));
+
+  /* Copy */
+  const toast = $('#toast'); let tt;
+  $$('[data-copy]').forEach(b => b.addEventListener('click', async () => {
+    const text = b.dataset.copy;
+    try { await navigator.clipboard.writeText(text); }
+    catch (e) { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (_) {} ta.remove(); }
+    toast.textContent = 'Copied: ' + text; toast.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => toast.classList.remove('show'), 1800);
+  }));
+
+  /* Reveal */
+  const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: .12, rootMargin: '0px 0px -40px 0px' });
+  $$('.reveal').forEach(el => io.observe(el));
+
+  /* Hero app: flatten on load, then animate chart */
+  const app = $('#app');
+  requestAnimationFrame(() => setTimeout(() => app.classList.add('flat'), 250));
+
+  /* Marquee duplicate */
+  const mq = $('#marquee'); mq.innerHTML += mq.innerHTML;
+  $$('.wm', mq).forEach((el, i) => { if (i >= $$('.wm', mq).length / 2) el.setAttribute('aria-hidden', 'true'); });
+
+  /* Event log ticks in arch diagram */
+  const ticks = $('#ticks'); const ns = 'http://www.w3.org/2000/svg';
+  for (let i = 0; i < 26; i++) {
+    const r = document.createElementNS(ns, 'rect');
+    r.setAttribute('x', 200 + i * 17); r.setAttribute('y', 184); r.setAttribute('width', 11); r.setAttribute('height', 24); r.setAttribute('rx', 3);
+    const c = i === 13 ? '#E8A93A' : i === 25 ? '#F07A3C' : (i % 5 === 0 ? '#5B8CFF' : 'rgba(255,255,255,.22)');
+    r.setAttribute('fill', c); r.setAttribute('class', 'tick'); r.style.animationDelay = (i * 0.23) + 's';
+    ticks.appendChild(r);
+  }
+
+  /* Module tabs */
+  const tabs = $$('.tab');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.setAttribute('aria-selected', x === t));
+    $$('.mod-panel').forEach(p => p.classList.toggle('on', p.id === t.getAttribute('aria-controls')));
+  }));
+  $('.tabs').addEventListener('keydown', e => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    const i = tabs.indexOf(document.activeElement); if (i < 0) return;
+    const n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; n.focus(); n.click();
+  });
+
+  /* Syntax highlighting */
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const PY_K = 'from|import|class|def|async|await|return|if|and|or|not|in|is|None|True|False|for|while|with|as|print|self';
+  const rules = {
+    py: new RegExp(`(#.*$)|("""[\\s\\S]*?"""|"(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*')|(@\\w+)|\\b(${PY_K})\\b|\\b(\\d+(?:\\.\\d+)?)\\b|\\b([A-Z]\\w*)\\b|\\b(\\w+)(?=\\()`, 'gm'),
+    yaml: /(#.*$)|("(?:[^"\\]|\\.)*")|^(\s*-?\s*)([\w.\-]+)(?=:)|(\b\d+(?:\.\d+)?\b)/gm
+  };
+  $$('.code-panel').forEach(pre => {
+    const lang = pre.dataset.lang, src = pre.textContent; let out = '', last = 0, m;
+    const re = rules[lang]; re.lastIndex = 0;
+    while ((m = re.exec(src))) {
+      out += esc(src.slice(last, m.index));
+      if (lang === 'py') {
+        const cls = m[1] ? 'c' : m[2] ? 's' : m[3] ? 'd' : m[4] ? 'k' : m[5] ? 'n' : m[6] ? 't' : 'f';
+        out += `<span class="tok-${cls}">${esc(m[0])}</span>`;
+      } else {
+        if (m[1]) out += `<span class="tok-c">${esc(m[1])}</span>`;
+        else if (m[2]) out += `<span class="tok-s">${esc(m[2])}</span>`;
+        else if (m[4]) out += esc(m[3]) + `<span class="tok-t">${esc(m[4])}</span>`;
+        else out += `<span class="tok-n">${esc(m[0])}</span>`;
+      }
+      last = m.index + m[0].length;
+      if (m[0].length === 0) re.lastIndex++;
+    }
+    out += esc(src.slice(last));
+    const hl = (pre.dataset.hl || '').split(',').map(Number);
+    pre.innerHTML = out.split('\n').map((l, i) => `<span class="ln${hl.includes(i + 1) ? ' hl' : ''}">${l || ' '}</span>`).join('');
+  });
+  const codeBtns = $$('.code-steps button'), edTabs = $$('#editorTabs span');
+  codeBtns.forEach((b, i) => b.addEventListener('click', () => {
+    codeBtns.forEach(x => x.setAttribute('aria-selected', x === b));
+    edTabs.forEach((t, j) => t.classList.toggle('on', j === i));
+    $$('.code-panel').forEach(p => p.classList.toggle('on', p.id === b.dataset.code));
+  }));
+
+  /* 100-run grid */
+  const grid = $('#grid100');
+  const cells = Array.from({ length: 100 }, () => { const c = document.createElement('div'); c.className = 'cell'; c.dataset.s = 'pending'; grid.appendChild(c); return c; });
+  const RUNAWAY = 37, PAUSER = 72;
+  const counter = () => {
+    const n = s => cells.filter(c => c.dataset.s === s).length;
+    $('#cRun').textContent = n('running'); $('#cOk').textContent = n('succeeded'); $('#cPause').textContent = n('paused'); $('#cHalt').textContent = n('halted');
+    $('#gridCounter').textContent = `${n('succeeded') + n('halted')} / 100 closed`;
+  };
+  const finalState = () => { cells.forEach((c, i) => c.dataset.s = i === RUNAWAY ? 'halted' : i === PAUSER ? 'paused' : 'succeeded'); counter(); };
+  let gridStarted = false;
+  const runGrid = () => {
+    if (gridStarted) return; gridStarted = true;
+    if (reduce) return finalState();
+    const timers = [];
+    const play = () => {
+      cells.forEach(c => c.dataset.s = 'pending'); counter();
+      cells.forEach((c, i) => {
+        const start = 80 + Math.random() * 900;
+        timers.push(setTimeout(() => { c.dataset.s = 'running'; counter(); }, start));
+        if (i === RUNAWAY) timers.push(setTimeout(() => { c.dataset.s = 'halted'; counter(); }, 5200));
+        else if (i === PAUSER) timers.push(setTimeout(() => { c.dataset.s = 'paused'; counter(); }, 2600));
+        else timers.push(setTimeout(() => { c.dataset.s = 'succeeded'; counter(); }, start + 1200 + Math.random() * 3200));
+      });
+      timers.push(setTimeout(play, 9500));
+    };
+    play();
+  };
+  new IntersectionObserver((es, o) => es.forEach(e => { if (e.isIntersecting) { runGrid(); o.disconnect(); } }), { threshold: .3 }).observe(grid);
+
+  /* Terminal typing */
+  const lines = $$('#term .t-line');
+  let termStarted = false;
+  const runTerm = () => {
+    if (termStarted) return; termStarted = true;
+    if (reduce) return lines.forEach(l => l.classList.add('show'));
+    const delays = [0, 500, 300, 200, 600, 900, 200, 700, 250, 800, 250, 200, 800, 300, 700, 400];
+    let t = 0; lines.forEach((l, i) => { t += delays[i] ?? 300; setTimeout(() => l.classList.add('show'), t); });
+  };
+  new IntersectionObserver((es, o) => es.forEach(e => { if (e.isIntersecting) { runTerm(); o.disconnect(); } }), { threshold: .35 }).observe($('#term'));
+
+  /* Count-up metrics */
+  const countIO = new IntersectionObserver(es => es.forEach(e => {
+    if (!e.isIntersecting) return; countIO.unobserve(e.target);
+    const el = e.target, to = +el.dataset.count; if (reduce || to === 0) return;
+    const t0 = performance.now(), dur = 1200;
+    const tick = now => { const p = Math.min(1, (now - t0) / dur); el.textContent = Math.round(to * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  }), { threshold: .6 });
+  $$('[data-count]').forEach(el => countIO.observe(el));
+})();
+</script>
+</body>
+</html>
